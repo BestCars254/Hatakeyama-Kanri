@@ -3,6 +3,7 @@
  *
  * 保存先：Netlify Blobs（ストア名 "kanri"）
  *   c/{id}        … お客様1人分 { client, weeks: { [週番号]: 記録 } }
+ *   k/{formKey}   … お客様用リンクの鍵 → { clientId }
  *   _auth/fails   … ログイン失敗の回数
  *
  * 環境変数（Netlify のサイト設定 → Environment variables）
@@ -28,13 +29,18 @@ const WEEK_FIELDS = {
   checkinDone: 'bool', meetingDate: 'date', formVideos: 'int', mealDays: 'int',
   reportSent: 'bool', memo: 'text',
 };
+// お客様がリンクから送る週次チェックイン
+const CHECKIN_FIELDS = { weights: 'weights', checks: 'checks', condition: 'condition', clientWin: 'text', clientNote: 'text' };
+const CONDITIONS = ['', '良い', '普通', 'いまいち'];
 const EMPTY_CLIENT = {
   name: '', lineName: '', goal: '', startDate: '', paidDate: '', checkinDow: '', meetingDow: '',
   status: '入金待ち', memo: '', eval0: '', eval4: '', eval8: '', eval12: '', finalDone: '', finalPlan: '',
 };
 const EMPTY_WEEK = {
   weights: [], checks: '', checkinDone: false, meetingDate: '', formVideos: 0, mealDays: 0, reportSent: false, memo: '',
+  condition: '', clientWin: '', clientNote: '', submittedAt: '',
 };
+const TZ_OFFSET_MS = 9 * 3600000; // 週の判定は日本時間
 
 class ApiError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -48,6 +54,14 @@ export async function handle(body, ctx) {
     if (!body || typeof body !== 'object') throw new ApiError('bad_request');
     if (!ctx.env.APP_PASSWORD || !ctx.env.TOKEN_SECRET) throw new ApiError('not_configured');
     if (body.action === 'login') return await login(body.password, ctx);
+
+    // お客様用リンク（ログイン不要。鍵で1人分だけ読み書きできる）
+    switch (body.action) {
+      case 'formGet':           return await formGet(body.key, ctx.store);
+      case 'formIntake':        return await formIntake(body.key, body.answers, ctx.store);
+      case 'formCheckin':       return await formCheckin(body.key, body.checkin, ctx.store);
+    }
+
     if (!verifyToken(body.token, ctx.env.TOKEN_SECRET)) return { ok: false, error: 'unauthorized' };
 
     switch (body.action) {
@@ -55,6 +69,7 @@ export async function handle(body, ctx) {
       case 'saveClient':   return await saveClient(body.client, ctx.store);
       case 'deleteClient': return await deleteClient(body.id, ctx.store);
       case 'saveWeek':     return await saveWeek(body.week, ctx.store);
+      case 'issueFormKey': return await issueFormKey(body.id, ctx.store);
       default:             throw new ApiError('bad_request');
     }
   } catch (err) {
@@ -129,7 +144,7 @@ async function saveClient(input, store) {
     const client = { id, ...EMPTY_CLIENT, ...patch, id, createdAt: now, updatedAt: now };
     const res = await store.setJSON('c/' + id, { client, weeks: {} }, { onlyIfNew: true });
     if (!res.modified) throw new ApiError('conflict');
-    return { ok: true, client };
+    return { ok: true, client: (await issueFormKey(id, store)).client };
   }
   const doc = await update(store, patch.id, (d) => {
     d.client = { ...d.client, ...patch, updatedAt: now };
@@ -141,6 +156,8 @@ async function saveClient(input, store) {
 async function deleteClient(id, store) {
   id = cast('id', id);
   if (!id) throw new ApiError('bad_request');
+  const doc = await store.get('c/' + id, { type: 'json' });
+  if (doc && doc.client && doc.client.formKey) await store.delete('k/' + doc.client.formKey);
   await store.delete('c/' + id);
   return { ok: true };
 }
@@ -156,6 +173,111 @@ async function saveWeek(input, store) {
     return d;
   });
   return { ok: true, week: doc.weeks[patch.week] };
+}
+
+// ---------------------------------------------------------------- お客様用リンク
+
+/** 鍵を新しく発行する（古いリンクは使えなくなる） */
+async function issueFormKey(id, store) {
+  id = cast('id', id);
+  if (!id) throw new ApiError('bad_request');
+  const key = crypto.randomBytes(18).toString('base64url');
+  await store.setJSON('k/' + key, { clientId: id });
+  let old = '';
+  const doc = await update(store, id, (d) => {
+    old = d.client.formKey || '';
+    d.client = { ...d.client, formKey: key, updatedAt: new Date().toISOString() };
+    return d;
+  });
+  if (old) await store.delete('k/' + old);
+  return { ok: true, client: doc.client };
+}
+
+async function clientIdByKey(key, store) {
+  if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{20,64}$/.test(key)) throw new ApiError('invalid_link');
+  const k = await store.get('k/' + key, { type: 'json' });
+  if (!k || !k.clientId) throw new ApiError('invalid_link');
+  return k.clientId;
+}
+
+/** 日本時間の今日が第何週か（開始前 0、終了後 13） */
+function currentWeek(startDate) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate || '');
+  if (!m) return null;
+  const start = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const now = new Date(Date.now() + TZ_OFFSET_MS);
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const dd = Math.round((today - start) / 86400000);
+  return dd < 0 ? 0 : Math.min(Math.floor(dd / 7) + 1, 13);
+}
+
+/** お客様に見せるのは本人の最小限の情報だけ */
+async function formGet(key, store) {
+  const id = await clientIdByKey(key, store);
+  const doc = await store.get('c/' + id, { type: 'json' });
+  if (!doc || !doc.client || doc.client.formKey !== key) throw new ApiError('invalid_link');
+  const c = doc.client;
+  const weeks = {};
+  for (const [n, w] of Object.entries(doc.weeks || {})) {
+    if (!w.submittedAt) continue;
+    weeks[n] = { weights: w.weights, checks: w.checks, condition: w.condition, clientWin: w.clientWin, clientNote: w.clientNote, submittedAt: w.submittedAt };
+  }
+  return {
+    ok: true,
+    client: { name: c.name, startDate: c.startDate, checkinDow: c.checkinDow, intakeDone: !!(c.intake && c.intake.submittedAt) },
+    intake: c.intake ? c.intake.answers : null,
+    currentWeek: currentWeek(c.startDate),
+    weeks,
+  };
+}
+
+async function formIntake(key, answers, store) {
+  const id = await clientIdByKey(key, store);
+  const clean = cleanAnswers(answers);
+  if (!clean.name) throw new ApiError('bad_request');
+  const now = new Date().toISOString();
+  await update(store, id, (d) => {
+    if (d.client.formKey !== key) throw new ApiError('invalid_link');
+    const c = { ...d.client, intake: { answers: clean, submittedAt: now }, updatedAt: now };
+    // 空いている項目は回答から自動で埋める（畠山さんが入力済みの値は上書きしない）
+    if (!c.lineName && clean.line_name) c.lineName = String(clean.line_name).slice(0, 200);
+    if (!c.goal && clean.goal_12w) c.goal = String(clean.goal_12w).slice(0, 5000);
+    const dow = Number(clean.checkin_dow);
+    if (c.checkinDow === '' && clean.checkin_dow !== '' && Number.isInteger(dow) && dow >= 0 && dow <= 6) c.checkinDow = dow;
+    d.client = c;
+    return d;
+  });
+  return { ok: true };
+}
+
+async function formCheckin(key, input, store) {
+  const id = await clientIdByKey(key, store);
+  if (!input || typeof input !== 'object') throw new ApiError('bad_request');
+  const week = cast('week', input.week);
+  const patch = pick(CHECKIN_FIELDS, input);
+  const now = new Date().toISOString();
+  const doc = await update(store, id, (d) => {
+    if (d.client.formKey !== key) throw new ApiError('invalid_link');
+    const cur = currentWeek(d.client.startDate);
+    if (!cur) throw new ApiError('not_started');
+    if (week > Math.min(cur, 12)) throw new ApiError('bad_request'); // 先の週には出せない
+    d.weeks = d.weeks || {};
+    d.weeks[week] = { clientId: id, week, ...EMPTY_WEEK, ...d.weeks[week], ...patch, checkinDone: true, submittedAt: now, updatedAt: now };
+    return d;
+  });
+  return { ok: true, submittedAt: doc.weeks[week].submittedAt };
+}
+
+/** ヒアリング回答：キーと長さを制限して保存する */
+function cleanAnswers(a) {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) throw new ApiError('bad_request');
+  const out = {};
+  for (const [k, v] of Object.entries(a).slice(0, 80)) {
+    if (!/^[a-z0-9_]{1,40}$/.test(k)) continue;
+    if (Array.isArray(v)) out[k] = v.slice(0, 20).map((x) => String(x).slice(0, 200));
+    else if (v != null) out[k] = String(v).slice(0, 3000).trim();
+  }
+  return out;
 }
 
 /** 読んで→変更して→「読んだ時から変わっていなければ」書く。同時保存は読み直してやり直す */
@@ -210,6 +332,9 @@ function cast(type, v) {
       if (!Number.isInteger(n) || n < 1 || n > 12) throw new ApiError('bad_request');
       return n;
     }
+    case 'condition':
+      if (!CONDITIONS.includes(String(v))) throw new ApiError('bad_request');
+      return String(v);
     case 'int': return Math.max(0, Math.min(99, Math.floor(Number(v) || 0)));
     case 'bool': return v === true || v === 1 || v === '1' || v === 'true';
     case 'checks': {

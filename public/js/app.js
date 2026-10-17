@@ -10,15 +10,9 @@
   const DOW = ['日', '月', '火', '水', '木', '金', '土'];
   const ST = { WAIT: '入金待ち', ACTIVE: '進行中', DONE: '終了', CONSULT: '継続相談' };
   const STATUSES = [ST.WAIT, ST.ACTIVE, ST.DONE, ST.CONSULT];
-  const CHECK_ITEMS = [
-    '予定していたトレーニングを実施できた',
-    '主要種目で回数・重量・フォームのどれかが改善した',
-    'タンパク質をおおむね目標量とれた',
-    '体重を複数回測り、週平均を確認した',
-    '睡眠時間を大きく崩さなかった',
-    '外食後も翌日から戻せた',
-    '写真・鏡・服のフィット感で変化を確認した',
-  ];
+  const CHECK_ITEMS = window.CHECK_ITEMS; // js/questions.js
+  const INTAKE = window.INTAKE;
+  const RECENT_MS = 3 * 86400000; // 「お客様からの提出」に出す期間
   const EVALS = [
     { key: 'eval0', week: 1, label: '開始時' },
     { key: 'eval4', week: 4, label: '4週' },
@@ -421,8 +415,11 @@
     state.dirty = false;
     if (!getToken()) return renderLogin();
     if (!state.ready) { $app.innerHTML = '<div class="loading"><span class="spin"></span>　読み込み中…</div>'; return; }
-    const [a, b] = location.hash.replace(/^#\/?/, '').split('/');
-    if (a === 'c' && b) return renderDetail(decodeURIComponent(b));
+    const [a, b, c, d] = location.hash.replace(/^#\/?/, '').split('/');
+    if (a === 'c' && b) {
+      if (c === 'w' && Number(d) >= 1 && Number(d) <= WEEKS) state.selWeek[decodeURIComponent(b)] = Number(d);
+      return renderDetail(decodeURIComponent(b));
+    }
     if (a === 'new') return renderEdit(null);
     if (a === 'edit' && b) return renderEdit(decodeURIComponent(b));
     return renderHome();
@@ -511,6 +508,7 @@
         ${mark('評価', st.evals, 4, st.missEval)}
         ${mark('レポート', st.rep, WEEKS, st.missRep)}
         ${mark('チェックイン', st.chk, WEEKS, st.missChk)}
+        ${c.intake && c.intake.submittedAt ? '' : '<span class="mk behind">ヒアリング未回答</span>'}
       </div>
     </a>`;
   }
@@ -523,6 +521,7 @@
       .sort((a, b) => (a.startDate || '9').localeCompare(b.startDate || '9'));
     const groups = [ST.WAIT, ST.CONSULT, ST.DONE].map((st) => ({ st, list: state.clients.filter((c) => c.status === st) }));
     const wd = `${t.getMonth() + 1}月${t.getDate()}日（${DOW[t.getDay()]}）`;
+    const recentSubs = recentSubmissions();
     const synced = state.syncedAt ? `${state.syncedAt.getHours()}:${String(state.syncedAt.getMinutes()).padStart(2, '0')} 時点` : '保存データを表示中';
 
     const list = (arr, cls, emptyText) => arr.length
@@ -551,6 +550,10 @@
       <div class="section"><h2>今週</h2><span class="count">${tasks.week.length}件</span></div>
       ${list(tasks.week, '', '今週の残りはありません')}
 
+      ${recentSubs.length ? `
+        <div class="section"><h2>お客様からの提出</h2><span class="count">直近3日</span></div>
+        <ul class="tasks">${recentSubs.map(subRow).join('')}</ul>` : ''}
+
       <div class="section"><h2>進行中のお客様</h2><span class="count">${active.length}名</span></div>
       ${active.length ? `<div class="cards">${active.map(clientCard).join('')}</div>`
         : `<div class="empty">進行中のお客様はいません。<br>右上の「＋ 追加」から登録できます。</div>`}
@@ -563,6 +566,77 @@
 
       <div class="foot"><span>LINE返信：原則2営業日以内（日曜・祝日は返信なし）</span><span><button class="btn tiny ghost" type="button" data-act="backup">バックアップ</button> <button class="btn tiny ghost" type="button" data-act="logout">ログアウト</button></span></div>
     `;
+  }
+
+  /** お客様がリンクから送った内容（直近3日・新しい順） */
+  function recentSubmissions() {
+    const since = Date.now() - RECENT_MS;
+    const out = [];
+    for (const c of state.clients) {
+      if (c.intake && c.intake.submittedAt && Date.parse(c.intake.submittedAt) > since) {
+        out.push({ c, at: c.intake.submittedAt, href: `#/c/${encodeURIComponent(c.id)}`, text: '事前ヒアリングに回答' });
+      }
+      for (const r of Object.values(state.weeks[c.id] || {})) {
+        if (r.submittedAt && Date.parse(r.submittedAt) > since) {
+          out.push({ c, at: r.submittedAt, href: `#/c/${encodeURIComponent(c.id)}/w/${r.week}`,
+            text: `${r.week}週目のチェックイン${r.condition ? `（体調：${r.condition}）` : ''}` });
+        }
+      }
+    }
+    return out.sort((a, b) => b.at.localeCompare(a.at));
+  }
+  function subRow(x) {
+    return `<li class="task sub"><a class="task-do" href="${x.href}">
+      <span class="tick" aria-hidden="true"></span>
+      <span class="task-text"><span class="who">${esc(san(x.c.name))}</span><span class="sep">｜</span>${esc(x.text)}
+        <span class="muted small num">　${esc(dt(x.at))}</span></span></a></li>`;
+  }
+  function dt(iso) {
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  // ---------- お客様用リンク ----------
+  function formUrl(c) { return `${location.origin}/form.html#${c.formKey}`; }
+  function lineMessage(c) {
+    const url = formUrl(c);
+    if (!(c.intake && c.intake.submittedAt)) {
+      return `${san(c.name)}\nご入金ありがとうございます。畠山です。\n開始前に、こちらの事前ヒアリングにご回答をお願いします（10〜15分ほど）。\n${url}\n\nこのリンクは開始後の「毎週のチェックイン」にも使います。ブックマークしておいてください。`;
+    }
+    return `${san(c.name)}\n今週のチェックインをお願いします。\n${url}`;
+  }
+  function linkPanel(c) {
+    if (!c.formKey) {
+      return `<section class="panel"><h2>お客様用リンク</h2>
+        <p class="muted small" style="margin:0 0 10px">事前ヒアリングと毎週のチェックインを、お客様がスマホから送れるリンクです。</p>
+        <button class="btn primary" type="button" data-act="issuekey">リンクを発行</button></section>`;
+    }
+    const done = c.intake && c.intake.submittedAt;
+    return `<section class="panel">
+      <h2>お客様用リンク <span class="badge${done ? ' active' : ''}">${done ? 'ヒアリング回答済み' : 'ヒアリング未回答'}</span></h2>
+      <p class="muted small" style="margin:0 0 8px">${done ? '開くと毎週のチェックイン画面になります。送られた内容は週の記録に自動で入ります。'
+        : '最初に開くと事前ヒアリング、回答後は毎週のチェックイン画面になります。'}</p>
+      <div class="linkbox"><input type="text" readonly value="${esc(formUrl(c))}" aria-label="お客様用リンク"></div>
+      <div class="link-actions">
+        <a class="btn primary" href="https://line.me/R/share?text=${encodeURIComponent(lineMessage(c))}" target="_blank" rel="noopener noreferrer">LINEで送る</a>
+        <button class="btn" type="button" data-act="copylink">コピー</button>
+        <button class="btn tiny ghost" type="button" data-act="issuekey" data-reissue="1">リンクを作り直す</button>
+      </div>
+    </section>`;
+  }
+  function intakePanel(c) {
+    if (!(c.intake && c.intake.submittedAt)) return '';
+    const a = c.intake.answers || {};
+    const val = (q) => {
+      if (q.type === 'radio') return a[q.id + '__label'] || a[q.id] || '—';
+      const v = a[q.id];
+      return v ? v + (q.unit ? ' ' + q.unit : '') : '—';
+    };
+    return `<details class="panel">
+      <summary>事前ヒアリングの回答 <span class="muted small">${esc(dt(c.intake.submittedAt))} 提出</span></summary>
+      <div class="qa">${INTAKE.sections.map((sec) => `<h3>${esc(sec.title)}</h3><dl>${sec.questions.map((q) =>
+        `<dt>${esc(q.label)}</dt><dd>${esc(val(q))}</dd>`).join('')}</dl>`).join('')}</div>
+    </details>`;
   }
 
   function groupNote(c) {
@@ -684,6 +758,8 @@
         ${s && s.cur >= 1 ? `<div class="bar"><i style="width:${(Math.min(s.cur, WEEKS) / WEEKS * 100).toFixed(1)}%"></i></div>` : ''}
       </section>
 
+      ${linkPanel(c)}
+
       <section class="panel">
         <h2>12週のタイムライン <span class="muted small">週をタップで記録</span></h2>
         ${tl}
@@ -694,6 +770,8 @@
         <h2>約束の達成状況</h2>
         ${promises}
       </section>
+
+      ${intakePanel(c)}
 
       <section class="panel" id="weekPanel">${weekForm(c, s, sel)}</section>
 
@@ -737,6 +815,12 @@
     return `
       <h2>週の記録 <span class="muted small num">${range}</span></h2>
       <div class="week-tabs" id="weekTabs">${tabs}</div>
+      ${r.submittedAt ? `<div class="sub-box">
+        <div class="ttl">お客様から提出（${esc(dt(r.submittedAt))}）${r.condition ? `　体調：${esc(r.condition)}` : ''}</div>
+        ${r.clientWin ? `<p><b>うまくいったこと：</b>${esc(r.clientWin)}</p>` : ''}
+        ${r.clientNote ? `<p><b>困っていること・質問：</b>${esc(r.clientNote)}</p>` : ''}
+        <p class="muted small">体重とチェックシートは下の欄に反映済みです。</p>
+      </div>` : ''}
       <form id="weekForm" novalidate>
         <label class="toggle"><input type="checkbox" name="checkinDone"${r.checkinDone ? ' checked' : ''}>
           <span>チェックインを受け取った${ci ? `<span class="muted small">（予定 ${mdw(ci)}）</span>` : ''}</span></label>
@@ -1028,6 +1112,24 @@
 
     if (act === 'refresh') return refresh({ force: true });
     if (act === 'backup') return downloadBackup();
+    if (act === 'copylink') {
+      const c = state.clients.find((x) => x.id === cid);
+      try { await navigator.clipboard.writeText(formUrl(c)); toast('リンクをコピーしました'); }
+      catch (_) { const i = document.querySelector('.linkbox input'); i.select(); toast('リンクを選択しました。コピーしてください'); }
+      return;
+    }
+    if (act === 'issuekey') {
+      if (el.dataset.reissue && !confirm('リンクを作り直すと、今までのリンクは使えなくなります。よろしいですか？')) return;
+      el.disabled = true;
+      try {
+        const d = await api('issueFormKey', { id: cid });
+        const i = state.clients.findIndex((x) => x.id === cid);
+        if (i >= 0) state.clients[i] = d.client;
+        saveCache();
+        toast(el.dataset.reissue ? '新しいリンクを発行しました' : 'リンクを発行しました');
+      } catch (ex) { toast(errText(ex)); }
+      return render();
+    }
     if (act === 'logout') { if (confirm('ログアウトしますか？')) logout(); return; }
     if (act === 'done' || act === 'go') {
       const task = state.tasks[el.dataset.tid];
