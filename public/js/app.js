@@ -3,7 +3,7 @@
 
   // ================================================================ 定数
 
-  const CFG = window.APP_CONFIG || {};
+  const API_URL = '/api';
   const TOKEN_KEY = 'hk_token';
   const CACHE_KEY = 'hk_cache';
   const WEEKS = 12;
@@ -31,9 +31,9 @@
   const ERRORS = {
     bad_password: 'パスワードが違います。',
     locked: 'ログインの失敗が続いたため、15分ほど時間をおいてください。',
-    not_configured: 'GAS側でパスワードが未設定です（スクリプトプロパティ APP_PASSWORD）。',
+    not_configured: 'サーバーの設定が済んでいません（Netlify の環境変数 APP_PASSWORD・TOKEN_SECRET）。',
     network: '通信できませんでした。電波状況を確認して、もう一度お試しください。',
-    config: 'GASのURLが未設定です（js/config.js）。',
+    conflict: '同時に保存されました。画面を更新して、もう一度保存してください。',
     unauthorized: 'ログインの有効期限が切れました。もう一度ログインしてください。',
     not_found: 'お客様が見つかりませんでした。画面を更新してください。',
   };
@@ -292,17 +292,16 @@
   }
 
   async function api(action, payload) {
-    if (!CFG.GAS_URL) throw new Error('config');
     const body = Object.assign({ action }, payload || {});
     if (action !== 'login') body.token = getToken();
     let res;
     try {
-      res = await fetch(CFG.GAS_URL, {
+      res = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // プリフライトを避ける
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        redirect: 'follow',
         credentials: 'omit',
+        cache: 'no-store',
       });
     } catch (_) { throw new Error('network'); }
     let data;
@@ -390,6 +389,19 @@
     }
   }
 
+  /** 全データを JSON ファイルで保存する（スプレッドシートの代わりの控え） */
+  function downloadBackup() {
+    const weeks = [];
+    Object.values(state.weeks).forEach((o) => weeks.push(...Object.values(o)));
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), clients: state.clients, weeks }, null, 2)],
+      { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `kanri-backup-${fd(today())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   // ================================================================ トースト
 
   let toastTimer = null;
@@ -435,7 +447,6 @@
           </div>
           <div class="field"><button class="btn primary block" type="submit">ログイン</button></div>
           ${msg ? `<div class="err">${esc(msg)}</div>` : ''}
-          ${CFG.GAS_URL ? '' : `<div class="err">${esc(ERRORS.config)}</div>`}
         </form>
       </section>`;
     const f = document.getElementById('loginForm');
@@ -550,7 +561,7 @@
           <ul class="plain-list">${g.list.map((c) => `<li><a href="#/c/${encodeURIComponent(c.id)}"><span>${esc(san(c.name))}</span><span>${groupNote(c)}</span></a></li>`).join('')}</ul>
         </details>` : '').join('')}
 
-      <div class="foot"><span>LINE返信：原則2営業日以内（日曜・祝日は返信なし）</span><button class="btn tiny ghost" type="button" data-act="logout">ログアウト</button></div>
+      <div class="foot"><span>LINE返信：原則2営業日以内（日曜・祝日は返信なし）</span><span><button class="btn tiny ghost" type="button" data-act="backup">バックアップ</button> <button class="btn tiny ghost" type="button" data-act="logout">ログアウト</button></span></div>
     `;
   }
 
@@ -1016,6 +1027,7 @@
     const cid = decodeURIComponent((location.hash.split('/')[2] || ''));
 
     if (act === 'refresh') return refresh({ force: true });
+    if (act === 'backup') return downloadBackup();
     if (act === 'logout') { if (confirm('ログアウトしますか？')) logout(); return; }
     if (act === 'done' || act === 'go') {
       const task = state.tasks[el.dataset.tid];
