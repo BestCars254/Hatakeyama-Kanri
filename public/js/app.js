@@ -410,23 +410,54 @@
 
   // ================================================================ 描画：共通
 
+  const ui = { home: 'todo', list: ST.ACTIVE, tab: {} }; // 画面の切り替え状態（clientId → 今週/記録/情報）
+
+  const ICON = {
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    todo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>',
+    people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.8-3.2 3-5 5.5-5s4.7 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2c2.4.1 4.2 1.7 5 4.8"/></svg>',
+    week: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+    chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M5 15l4-4 3 3 6-7"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.6v.1"/></svg>',
+    line: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.5c-5 0-9 3.2-9 7.2 0 3.6 3.2 6.6 7.5 7.1.3.1.7.2.8.5.1.2.1.6 0 .9l-.1.8c0 .2-.2.9.8.5s5.4-3.2 7.4-5.5c1.3-1.4 2-2.9 2-4.3 0-4-4-7.2-9-7.2z"/></svg>',
+  };
+
   function render() {
     if (chart) { chart.destroy(); chart = null; }
     state.dirty = false;
+    document.body.classList.remove('has-fab');
     if (!getToken()) return renderLogin();
-    if (!state.ready) { $app.innerHTML = '<div class="loading"><span class="spin"></span>　読み込み中…</div>'; return; }
+    if (!state.ready) { $app.innerHTML = '<div class="loading"><span class="spin"></span>読み込み中…</div>'; return; }
     const [a, b, c, d] = location.hash.replace(/^#\/?/, '').split('/');
     if (a === 'c' && b) {
-      if (c === 'w' && Number(d) >= 1 && Number(d) <= WEEKS) state.selWeek[decodeURIComponent(b)] = Number(d);
-      return renderDetail(decodeURIComponent(b));
+      const id = decodeURIComponent(b);
+      if (c === 'w' && Number(d) >= 1 && Number(d) <= WEEKS) { state.selWeek[id] = Number(d); ui.tab[id] = 'record'; }
+      return renderDetail(id);
     }
     if (a === 'new') return renderNew();
     if (a === 'edit' && b) return renderEdit(decodeURIComponent(b));
     return renderHome();
   }
 
-  function topBar(title, back, right) {
-    return `<header class="top">${back ? `<a class="back" href="${back}">‹ 戻る</a>` : ''}<h1>${esc(title)}</h1>${right || ''}</header>`;
+  /** ページ上部（ロゴ・タイトル） */
+  function head(title, sub, opts) {
+    const o = opts || {};
+    return `<header class="hd">
+      <div class="hd-bar">
+        ${o.back ? `<a class="hd-btn" href="${o.back}" aria-label="戻る">‹</a>` : '<span class="hd-btn ghost"></span>'}
+        <span class="brand">HATAKEYAMA <b>COACHING</b></span>
+        ${o.right || '<span class="hd-btn ghost"></span>'}
+      </div>
+      <h1 class="h-title">${esc(title)}</h1>
+      ${sub ? `<p class="h-sub">${sub}</p>` : ''}
+      ${o.bar != null ? `<div class="bar big"><i style="width:${o.bar.toFixed(1)}%"></i></div>` : ''}
+    </header>`;
+  }
+
+  /** 大きな切り替えボタン（RafaCoach の 治療／食事 と同じ形） */
+  function modeSwitch(items, cur, act) {
+    return `<div class="mode m${items.length}">${items.map((it) =>
+      `<button type="button" class="${it.key === cur ? 'on' : ''}" data-act="${act}" data-v="${it.key}">${it.icon || ''}<span>${esc(it.label)}</span>${it.count != null ? `<em>${it.count}</em>` : ''}</button>`).join('')}</div>`;
   }
 
   // ================================================================ ログイン
@@ -435,14 +466,12 @@
     $app.innerHTML = `
       <section class="login">
         <form id="loginForm" autocomplete="on">
-          <h1>顧客管理</h1>
-          <p>畠山祐輔さん・株式会社マルカト 関係者専用</p>
+          <span class="brand">HATAKEYAMA <b>COACHING</b></span>
+          <h1 class="h-title">顧客管理</h1>
+          <p class="h-sub">関係者専用</p>
           <input type="text" name="username" value="hatakeyama-kanri" autocomplete="username" hidden>
-          <div class="field">
-            <label for="pw">パスワード</label>
-            <input id="pw" type="password" name="password" autocomplete="current-password" required>
-          </div>
-          <div class="field"><button class="btn primary block" type="submit">ログイン</button></div>
+          <input id="pw" type="password" name="password" autocomplete="current-password" placeholder="パスワード" aria-label="パスワード" required>
+          <button class="btn primary block" type="submit">ログイン</button>
           ${msg ? `<div class="err">${esc(msg)}</div>` : ''}
         </form>
       </section>`;
@@ -464,108 +493,109 @@
     setTimeout(() => { const p = document.getElementById('pw'); if (p) p.focus(); }, 50);
   }
 
-  // ================================================================ 画面1：ホーム
+  // ================================================================ ホーム
 
-  function taskRow(task, cls) {
-    state.tasks[task.id] = task;
-    const go = task.kind === 'go';
-    return `<li class="task ${cls}${go ? ' go' : ''}" data-tid="${esc(task.id)}">
-      <button type="button" class="task-do" data-act="${go ? 'go' : 'done'}" data-tid="${esc(task.id)}">
-        <span class="tick" aria-hidden="true"></span>
-        <span class="task-text"><span class="who">${esc(san(task.c.name))}</span><span class="sep">｜</span>${esc(task.text)}</span>
-      </button>
-      <a class="task-go" href="#/c/${encodeURIComponent(task.c.id)}" aria-label="${esc(san(task.c.name))}の詳細">›</a>
-    </li>`;
+  function renderHome() {
+    const t = today();
+    const tasks = buildTasks();
+    const subs = recentSubmissions();
+    state.tasks = {};
+    const nTodo = tasks.overdue.length + tasks.today.length + tasks.week.length;
+    const lists = {
+      [ST.ACTIVE]: state.clients.filter((c) => c.status === ST.ACTIVE),
+      [ST.WAIT]: state.clients.filter((c) => c.status === ST.WAIT),
+      [ST.DONE]: state.clients.filter((c) => c.status === ST.DONE || c.status === ST.CONSULT),
+    };
+    const sub = [
+      tasks.overdue.length ? `<span class="warn">遅れ ${tasks.overdue.length}</span>` : '',
+      `今日 ${tasks.today.length}`, `今週 ${tasks.week.length}`,
+    ].filter(Boolean).join('<span class="dot-sep">・</span>');
+
+    let body;
+    if (ui.home === 'todo') {
+      const block = (label, arr, cls, limit) => {
+        if (!arr.length) return '';
+        const shown = limit ? arr.slice(0, limit) : arr;
+        const rest = limit ? arr.slice(limit) : [];
+        return `<div class="sec ${cls}"><h2>${label}</h2><span>${arr.length}</span></div>
+          <div class="list">${shown.map((x) => taskCard(x, cls)).join('')}</div>
+          ${rest.length ? `<details class="more"><summary>残り${rest.length}件を表示</summary><div class="list">${rest.map((x) => taskCard(x, cls)).join('')}</div></details>` : ''}`;
+      };
+      body = `
+        ${subs.length ? `<div class="sec new"><h2>お客様から届いた</h2><span>${subs.length}</span></div>
+          <div class="list">${subs.map(subCard).join('')}</div>` : ''}
+        ${block('遅れ・抜け', tasks.overdue, 'overdue', OVERDUE_SHOWN)}
+        ${block('今日', tasks.today, 'today')}
+        ${block('今週', tasks.week, 'week')}
+        ${nTodo || subs.length ? '' : `<div class="empty"><div class="empty-ic">${ICON.check}</div>やることはありません</div>`}`;
+    } else {
+      const tabs = [[ST.ACTIVE, '進行中'], [ST.WAIT, '入金待ち'], [ST.DONE, '終了']];
+      const arr = lists[ui.list].slice().sort((a, b) => (a.startDate || '9').localeCompare(b.startDate || '9'));
+      body = `
+        <div class="tabs"><div class="tabs-inner t3">${tabs.map(([k, l]) =>
+          `<button type="button" class="tab${ui.list === k ? ' on' : ''}" data-act="list" data-v="${k}"><span class="t-l">${lists[k].length}</span><span class="t-s">${l}</span></button>`).join('')}</div></div>
+        ${arr.length ? `<div class="list">${arr.map(clientCard).join('')}</div>`
+          : `<div class="empty">${ui.list === ST.ACTIVE ? '進行中のお客様はいません' : 'いません'}</div>`}`;
+    }
+
+    $app.innerHTML = `
+      ${head(`${t.getMonth() + 1}月${t.getDate()}日（${DOW[t.getDay()]}）`, sub)}
+      ${modeSwitch([
+        { key: 'todo', label: 'やること', icon: ICON.todo, count: nTodo },
+        { key: 'clients', label: 'お客様', icon: ICON.people, count: state.clients.length },
+      ], ui.home, 'home')}
+      ${body}
+      <footer class="foot">
+        <span>${state.syncedAt ? `${state.syncedAt.getHours()}:${String(state.syncedAt.getMinutes()).padStart(2, '0')} 更新` : '保存データを表示中'}</span>
+        <button type="button" data-act="refresh">更新</button>
+        <button type="button" data-act="backup">バックアップ</button>
+        <button type="button" data-act="logout">ログアウト</button>
+      </footer>
+      <a class="fab" href="#/new">＋ お客様を追加</a>`;
+    document.body.classList.add('has-fab');
   }
 
-  function mark(label, done, total, behind) {
-    const cls = behind ? 'behind' : done >= total ? 'full' : '';
-    return `<span class="mk ${cls}">${label} <b class="num">${done}/${total}</b></span>`;
+  function taskCard(task, cls) {
+    state.tasks[task.id] = task;
+    const go = task.kind === 'go';
+    return `<div class="tk ${cls}${go ? ' go' : ''}" data-tid="${esc(task.id)}">
+      <button type="button" class="tk-do" data-act="${go ? 'go' : 'done'}" data-tid="${esc(task.id)}">
+        <span class="num">${go ? '›' : ''}<i>${ICON.check}</i></span>
+        <span class="tk-b"><span class="tk-who">${esc(san(task.c.name))}</span><span class="tk-what">${esc(task.text)}</span></span>
+      </button>
+      <a class="tk-go" href="#/c/${encodeURIComponent(task.c.id)}" aria-label="${esc(san(task.c.name))}を開く">›</a>
+    </div>`;
+  }
+
+  function subCard(x) {
+    return `<a class="tk new" href="${x.href}">
+      <span class="tk-do"><span class="num">${ICON.line}</span>
+      <span class="tk-b"><span class="tk-who">${esc(san(x.c.name))}</span><span class="tk-what">${esc(x.text)}<small>　${esc(dt(x.at))}</small></span></span></span>
+      <span class="tk-go">›</span></a>`;
   }
 
   function clientCard(c) {
     const st = stats(c);
     const s = st.s;
-    const behind = st.missMeet || st.missRep || st.missChk || st.missEval;
-    let wk, pct;
-    if (!s) { wk = '開始日未設定'; pct = 0; }
-    else if (s.cur === 0) { wk = `開始前<small>（${md(s.start)}〜）</small>`; pct = 0; }
-    else if (s.cur > WEEKS) { wk = '12週終了'; pct = 100; }
-    else { wk = `${s.cur}週目<small>／12週</small>`; pct = s.cur / WEEKS * 100; }
-    const nm = nextMeeting(c, s);
-    const nc = nextCheckin(c, s);
-    return `<a class="card${behind ? ' alert' : ''}" href="#/c/${encodeURIComponent(c.id)}">
-      <div class="card-top"><span class="name">${esc(san(c.name))}</span><span class="wk num">${wk}</span></div>
-      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="12" aria-valuenow="${s ? Math.min(s.cur, 12) : 0}"><i style="width:${pct.toFixed(1)}%"></i></div>
-      <dl class="meta">
-        <div><dt>次のチェックイン</dt><dd class="num">${c.checkinDow === '' ? '曜日未設定' : nc ? mdw(nc) : '—'}</dd></div>
-        <div><dt>次の面談</dt><dd class="num">${esc(nm || '—')}</dd></div>
-        <div><dt>週平均体重</dt><dd class="num">${st.latestW ? kg(st.latestW.v) + ` <small>${st.latestW.w}週</small>` : '—'}</dd></div>
-        <div><dt>チェックシート</dt><dd class="num">${st.latestS ? `${st.latestS.v}/7 <small>${scoreLabel(st.latestS.v)}</small>` : '—'}</dd></div>
-      </dl>
-      <div class="marks">
-        ${mark('面談', st.meet, WEEKS, st.missMeet)}
-        ${mark('評価', st.evals, 4, st.missEval)}
-        ${mark('レポート', st.rep, WEEKS, st.missRep)}
-        ${mark('チェックイン', st.chk, WEEKS, st.missChk)}
-        ${c.intake && c.intake.submittedAt ? '' : '<span class="mk behind">ヒアリング未回答</span>'}
-      </div>
+    const miss = st.missMeet + st.missRep + st.missChk + st.missEval;
+    const intake = c.intake && c.intake.submittedAt;
+    let wk, pct = 0;
+    if (c.status === ST.WAIT) wk = c.paidDate ? '入金済' : '入金待ち';
+    else if (!s) wk = '開始日未定';
+    else if (s.cur === 0) wk = `${md(s.start)}開始`;
+    else if (s.cur > WEEKS) { wk = '終了'; pct = 100; }
+    else { wk = `<b>${s.cur}</b>/12週`; pct = s.cur / WEEKS * 100; }
+    let pill;
+    if (miss) pill = `<span class="pill warn">遅れ ${miss}件</span>`;
+    else if (!intake && c.status !== ST.DONE) pill = '<span class="pill warn">ヒアリング未回答</span>';
+    else if (c.status === ST.ACTIVE && s && s.cur >= 1) pill = '<span class="pill ok">順調</span>';
+    else pill = '';
+    const nc = c.status === ST.ACTIVE ? nextCheckin(c, s) : null;
+    return `<a class="cl${miss ? ' alert' : ''}" href="#/c/${encodeURIComponent(c.id)}">
+      <div class="cl-top"><span class="cl-name">${esc(san(c.name))}</span><span class="cl-wk">${wk}</span></div>
+      ${c.status === ST.ACTIVE ? `<div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>` : ''}
+      <div class="cl-meta">${pill}${nc ? `<span>次のチェックイン ${mdw(nc)}</span>` : ''}${st.latestW ? `<span>${kg(st.latestW.v)}</span>` : ''}</div>
     </a>`;
-  }
-
-  function renderHome() {
-    const t = today();
-    const tasks = buildTasks();
-    state.tasks = {};
-    const active = state.clients.filter((c) => c.status === ST.ACTIVE)
-      .sort((a, b) => (a.startDate || '9').localeCompare(b.startDate || '9'));
-    const groups = [ST.WAIT, ST.CONSULT, ST.DONE].map((st) => ({ st, list: state.clients.filter((c) => c.status === st) }));
-    const wd = `${t.getMonth() + 1}月${t.getDate()}日（${DOW[t.getDay()]}）`;
-    const recentSubs = recentSubmissions();
-    const synced = state.syncedAt ? `${state.syncedAt.getHours()}:${String(state.syncedAt.getMinutes()).padStart(2, '0')} 時点` : '保存データを表示中';
-
-    const list = (arr, cls, emptyText) => arr.length
-      ? `<ul class="tasks">${arr.map((x) => taskRow(x, cls)).join('')}</ul>`
-      : `<div class="empty">${emptyText}</div>`;
-
-    $app.innerHTML = `
-      ${topBar('顧客管理', null, `<button class="btn ghost" type="button" data-act="refresh">更新</button><a class="btn primary" href="#/new">＋ 追加</a>`)}
-      <div class="dateline"><span class="d">${wd}</span><span class="muted small">${synced}</span></div>
-      <div class="chips">
-        <div class="chip${tasks.overdue.length ? ' alert' : ''}"><b class="num">${tasks.overdue.length}</b><span>遅れ・抜け</span></div>
-        <div class="chip"><b class="num">${tasks.today.length}</b><span>今日</span></div>
-        <div class="chip"><b class="num">${tasks.week.length}</b><span>今週</span></div>
-      </div>
-
-      ${tasks.overdue.length ? `
-        <div class="section"><h2>遅れ・抜け</h2><span class="count">タップで「済」</span></div>
-        ${list(tasks.overdue.slice(0, OVERDUE_SHOWN), 'overdue', '')}
-        ${tasks.overdue.length > OVERDUE_SHOWN ? `
-          <details class="more"><summary>残り${tasks.overdue.length - OVERDUE_SHOWN}件を表示</summary>
-          ${list(tasks.overdue.slice(OVERDUE_SHOWN), 'overdue', '')}</details>` : ''}` : ''}
-
-      <div class="section"><h2>今日</h2><span class="count">${tasks.today.length}件</span></div>
-      ${list(tasks.today, '', '今日の予定はありません')}
-
-      <div class="section"><h2>今週</h2><span class="count">${tasks.week.length}件</span></div>
-      ${list(tasks.week, '', '今週の残りはありません')}
-
-      ${recentSubs.length ? `
-        <div class="section"><h2>お客様からの提出</h2><span class="count">直近3日</span></div>
-        <ul class="tasks">${recentSubs.map(subRow).join('')}</ul>` : ''}
-
-      <div class="section"><h2>進行中のお客様</h2><span class="count">${active.length}名</span></div>
-      ${active.length ? `<div class="cards">${active.map(clientCard).join('')}</div>`
-        : `<div class="empty">進行中のお客様はいません。<br>右上の「＋ 追加」から登録できます。</div>`}
-
-      ${groups.map((g) => g.list.length ? `
-        <details class="group">
-          <summary>${g.st}<span class="muted small num">${g.list.length}名</span></summary>
-          <ul class="plain-list">${g.list.map((c) => `<li><a href="#/c/${encodeURIComponent(c.id)}"><span>${esc(san(c.name))}</span><span>${groupNote(c)}</span></a></li>`).join('')}</ul>
-        </details>` : '').join('')}
-
-      <div class="foot"><span>LINE返信：原則2営業日以内（日曜・祝日は返信なし）</span><span><button class="btn tiny ghost" type="button" data-act="backup">バックアップ</button> <button class="btn tiny ghost" type="button" data-act="logout">ログアウト</button></span></div>
-    `;
   }
 
   /** お客様がリンクから送った内容（直近3日・新しい順） */
@@ -574,7 +604,7 @@
     const out = [];
     for (const c of state.clients) {
       if (c.intake && c.intake.submittedAt && Date.parse(c.intake.submittedAt) > since) {
-        out.push({ c, at: c.intake.submittedAt, href: `#/c/${encodeURIComponent(c.id)}`, text: '事前ヒアリングに回答' });
+        out.push({ c, at: c.intake.submittedAt, href: `#/c/${encodeURIComponent(c.id)}`, text: '事前ヒアリングに回答しました' });
       }
       for (const r of Object.values(state.weeks[c.id] || {})) {
         if (r.submittedAt && Date.parse(r.submittedAt) > since) {
@@ -585,69 +615,9 @@
     }
     return out.sort((a, b) => b.at.localeCompare(a.at));
   }
-  function subRow(x) {
-    return `<li class="task sub"><a class="task-do" href="${x.href}">
-      <span class="tick" aria-hidden="true"></span>
-      <span class="task-text"><span class="who">${esc(san(x.c.name))}</span><span class="sep">｜</span>${esc(x.text)}
-        <span class="muted small num">　${esc(dt(x.at))}</span></span></a></li>`;
-  }
   function dt(iso) {
     const d = new Date(iso);
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
-
-  // ---------- お客様用リンク ----------
-  function formUrl(c) { return `${location.origin}/form.html#${c.formKey}`; }
-  function lineMessage(c) {
-    const url = formUrl(c);
-    if (!(c.intake && c.intake.submittedAt)) {
-      const head = c.paidDate ? 'ご入金を確認しました。ありがとうございます。' : 'このたびはお申し込みありがとうございます。';
-      return `${san(c.name)}\n${head}畠山です。\n\n開始前に、こちらの事前ヒアリングにご回答をお願いします（5分ほど）。\n${url}\n\nこのリンクは、開始後の毎週のチェックインにも使います。ブックマークしておいてください。`;
-    }
-    return `${san(c.name)}\n今週のチェックインをお願いします。\n${url}`;
-  }
-  function linkPanel(c) {
-    if (!c.formKey) {
-      return `<section class="panel"><h2>お客様用リンク</h2>
-        <p class="muted small" style="margin:0 0 10px">事前ヒアリングと毎週のチェックインを、お客様がスマホから送れるリンクです。</p>
-        <button class="btn primary" type="button" data-act="issuekey">リンクを発行</button></section>`;
-    }
-    const done = c.intake && c.intake.submittedAt;
-    return `<section class="panel">
-      <h2>お客様用リンク <span class="badge${done ? ' active' : ''}">${done ? 'ヒアリング回答済み' : 'ヒアリング未回答'}</span></h2>
-      <p class="muted small" style="margin:0 0 8px">${done ? '開くと毎週のチェックイン画面になります。送られた内容は週の記録に自動で入ります。'
-        : '最初に開くと事前ヒアリング、回答後は毎週のチェックイン画面になります。'}</p>
-      <textarea class="msgbox" readonly rows="7" aria-label="送る案内文">${esc(lineMessage(c))}</textarea>
-      <div class="link-actions">
-        <a class="btn primary" href="https://line.me/R/share?text=${encodeURIComponent(lineMessage(c))}" target="_blank" rel="noopener noreferrer">LINEで送る</a>
-        <button class="btn" type="button" data-act="copymsg">案内文をコピー</button>
-        <button class="btn" type="button" data-act="copylink">リンクだけコピー</button>
-        <button class="btn tiny ghost" type="button" data-act="issuekey" data-reissue="1">リンクを作り直す</button>
-      </div>
-    </section>`;
-  }
-  function intakePanel(c) {
-    if (!(c.intake && c.intake.submittedAt)) return '';
-    const a = c.intake.answers || {};
-    const val = (q) => {
-      if (q.type === 'radio') return a[q.id + '__label'] || a[q.id] || '—';
-      const v = a[q.id];
-      return v ? v + (q.unit ? ' ' + q.unit : '') : '—';
-    };
-    return `<details class="panel">
-      <summary>事前ヒアリングの回答 <span class="muted small">${esc(dt(c.intake.submittedAt))} 提出</span></summary>
-      <div class="qa">${INTAKE.sections.map((sec) => `<h3>${esc(sec.title)}</h3><dl>${sec.questions.map((q) =>
-        `<dt>${esc(q.label)}</dt><dd>${esc(val(q))}</dd>`).join('')}</dl>`).join('')}</div>
-    </details>`;
-  }
-
-  function groupNote(c) {
-    if (c.status === ST.WAIT) {
-      const h = c.intake && c.intake.submittedAt ? 'ヒアリング済' : 'ヒアリング未';
-      return (c.paidDate ? '入金済・' : '入金待ち・') + h + (c.startDate ? '・開始 ' + md(pd(c.startDate)) : '');
-    }
-    const s = sched(c);
-    return s ? md(s.start) + '〜' + md(s.end) : '';
   }
 
   async function onTaskDone(task, row) {
@@ -655,7 +625,7 @@
     const ts = fd(t);
     const c = task.c;
     row.classList.add('done');
-    row.querySelector('.task-do').disabled = true;
+    row.querySelector('.tk-do').disabled = true;
     let undo;
     try {
       if (task.kind === 'checkin') {
@@ -679,208 +649,200 @@
       }
     } catch (_) {
       row.classList.remove('done');
-      row.querySelector('.task-do').disabled = false;
+      row.querySelector('.tk-do').disabled = false;
       return;
     }
-    setTimeout(() => { if (!state.dirty) render(); }, 450);
+    setTimeout(() => { if (!state.dirty) keepScroll(render); }, 450);
     toast(`${san(c.name)}｜${task.text.replace(/（.*$/, '')} を済にしました`, async () => {
       try { await undo(); } catch (_) { /* toast は patch 側で出す */ }
-      render();
+      keepScroll(render);
     });
   }
 
-  // ================================================================ 画面2：お客様の詳細
+  function keepScroll(fn) { const y = window.scrollY; fn(); window.scrollTo(0, y); }
+
+  // ================================================================ お客様の画面
 
   function renderDetail(id) {
     const c = state.clients.find((x) => x.id === id);
     if (!c) {
-      $app.innerHTML = topBar('お客様', '#/') + '<div class="empty" style="margin-top:20px">見つかりませんでした。</div>';
+      $app.innerHTML = head('見つかりません', '', { back: '#/' }) + '<div class="empty">画面を更新してください。</div>';
       return;
     }
     const s = sched(c);
-    const st = stats(c);
-    const t = today();
     if (!state.selWeek[id]) state.selWeek[id] = s ? Math.min(Math.max(s.cur, 1), WEEKS) : 1;
-    const sel = state.selWeek[id];
-    const dowName = (d) => (d === '' || d == null ? '未設定' : DOW[d] + '曜');
+    const tab = ui.tab[id] || 'week';
+    let sub;
+    if (c.status === ST.WAIT) sub = c.paidDate ? `入金済（${mdwS(c.paidDate)}）・開始日未定` : '入金待ち';
+    else if (!s) sub = '開始日未定';
+    else if (s.cur === 0) sub = `${mdw(s.start)} 開始`;
+    else if (s.cur > WEEKS) sub = `12週終了（${md(s.start)}〜${md(s.end)}）`;
+    else sub = `<b>${s.cur}週目</b> / 12週　${md(s.start)}〜${md(s.end)}`;
 
-    const wkLabel = !s ? '開始日未設定' : s.cur === 0 ? '開始前' : s.cur > WEEKS ? '12週終了' : `${s.cur}週目／12週`;
-
-    // 約束の達成表
-    const curRec = s && s.cur >= 1 && s.cur <= WEEKS ? rec(id, s.cur) || {} : null;
-    const evalRows = EVALS.map((ev) => {
-      const due = s ? evalDue(c, s, ev) : null;
-      const miss = !c[ev.key] && due && due < t;
-      return `<div class="eval${miss ? ' miss' : ''}">
-        <span class="lbl">${ev.label}<span class="muted small">　予定 ${mdw(due)}</span></span>
-        <span>${c[ev.key]
-          ? `<input type="date" value="${esc(c[ev.key])}" data-act="evaldate" data-key="${ev.key}" aria-label="${ev.label}の実施日">`
-          : `<button class="btn tiny" type="button" data-act="evaldone" data-key="${ev.key}">今日 実施</button>`}</span>
-      </div>`;
-    }).join('');
-
-    const finalDue = s ? s.end : null;
-    const finalMiss = !c.finalDone && finalDue && finalDue < t;
-
-    const promises = `
-      <table class="promises">
-        <tr class="${st.missMeet ? 'behind' : ''}"><th>個別面談<small>週1回60分 × 全12回</small></th>
-          <td><span class="st num">${st.meet}/12回</span>${st.missMeet ? `<br><span class="small">未実施 ${st.missMeet}週</span>` : ''}</td></tr>
-        <tr class="${st.missEval ? 'behind' : ''}"><th>目標・身体評価<small>開始時／4週／8週／12週</small></th>
-          <td><div class="evals">${evalRows}</div></td></tr>
-        <tr><th>フォーム添削<small>動画提出 週2本まで</small></th>
-          <td><span class="st num">${curRec ? `今週 ${curRec.formVideos || 0}/${FORM_MAX}本` : '—'}</span></td></tr>
-        <tr><th>食事記録の確認<small>週3日分</small></th>
-          <td><span class="st num">${curRec ? `今週 ${curRec.mealDays || 0}/${MEAL_TARGET}日` : '—'}</span></td></tr>
-        <tr class="${st.missRep ? 'behind' : ''}"><th>週間レポート<small>週1回（振り返りと改善提案）</small></th>
-          <td><span class="st num">${st.rep}/12回</span>${st.missRep ? `<br><span class="small">未送付 ${st.missRep}週</span>` : ''}</td></tr>
-        <tr><th>LINEサポート<small>原則2営業日以内に返信</small></th>
-          <td><span class="muted small">日曜・祝日は返信なし（表示のみ）</span></td></tr>
-        <tr class="${finalMiss ? 'behind' : ''}"><th>最終評価<small>12週目</small></th>
-          <td><span class="st">${c.finalDone ? '済 ' + mdwS(c.finalDone) : '予定 ' + mdw(finalDue)}</span></td></tr>
-      </table>`;
-
-    // 12週のタイムライン
-    const rows = [['meeting', '面談'], ['checkin', 'チェックイン'], ['report', 'レポート'], ['eval', '評価']];
-    let tl = '<div class="tl"><span></span>';
-    for (let w = 1; w <= WEEKS; w++) {
-      tl += `<button type="button" class="wkh num${s && s.cur === w ? ' cur' : ''}${sel === w ? ' sel' : ''}" data-act="selweek" data-w="${w}" aria-label="${w}週目を開く">${w}</button>`;
-    }
-    for (const [k, lab] of rows) {
-      tl += `<span class="lab">${lab}</span>`;
-      for (let w = 1; w <= WEEKS; w++) {
-        const cs = s ? cellState(c, s, w, k) : (k === 'eval' && !EVALS.some((e) => e.week === w) ? 'none' : 'todo');
-        tl += `<span class="c">${cs === 'none' ? '' : `<i class="dot ${cs}" title="${w}週目 ${lab}"></i>`}</span>`;
-      }
-    }
-    tl += '</div>';
+    let body;
+    if (tab === 'week') body = weekTab(c, s);
+    else if (tab === 'record') body = recordTab(c, s);
+    else body = infoTab(c, s);
 
     $app.innerHTML = `
-      ${topBar(san(c.name), '#/', `<a class="btn" href="#/edit/${encodeURIComponent(id)}">編集</a>`)}
-      <section class="hero">
-        <div class="row"><span class="name">${esc(san(c.name))}</span><span class="badge${c.status === ST.ACTIVE ? ' active' : ''}">${esc(c.status)}</span></div>
-        <div class="muted num">${wkLabel}${s ? `　${md(s.start)}〜${md(s.end)}` : ''}</div>
-        ${s && s.cur >= 1 ? `<div class="bar"><i style="width:${(Math.min(s.cur, WEEKS) / WEEKS * 100).toFixed(1)}%"></i></div>` : ''}
-      </section>
-
-      ${linkPanel(c)}
-
-      <section class="panel">
-        <h2>12週のタイムライン <span class="muted small">週をタップで記録</span></h2>
-        ${tl}
-        <div class="legend"><span><i class="dot done"></i>済</span><span><i class="dot miss"></i>遅れ</span><span><i class="dot todo"></i>これから</span></div>
-      </section>
-
-      <section class="panel">
-        <h2>約束の達成状況</h2>
-        ${promises}
-      </section>
-
-      ${intakePanel(c)}
-
-      <section class="panel" id="weekPanel">${weekForm(c, s, sel)}</section>
-
-      <section class="panel">
-        <h2>推移 <span class="muted small">週平均体重・スコア</span></h2>
-        <div class="chart-box"><canvas id="chart" aria-label="週平均体重とスコアの推移"></canvas></div>
-        <div id="chartMsg" class="muted small"></div>
-      </section>
-
-      ${s && (s.cur >= 11 || c.finalDone || c.finalPlan) ? finalPanel(c, s) : ''}
-
-      <section class="panel">
-        <h2>基本情報 <a class="btn tiny" href="#/edit/${encodeURIComponent(id)}">編集</a></h2>
-        <dl class="kv">
-          <dt>LINE名</dt><dd>${esc(c.lineName || '—')}</dd>
-          <dt>目標</dt><dd>${esc(c.goal || '—')}</dd>
-          <dt>開始日</dt><dd class="num">${c.startDate ? mdwS(c.startDate) + ' ' + c.startDate.slice(0, 4) : '—'}</dd>
-          <dt>入金確認日</dt><dd class="num">${c.paidDate ? mdwS(c.paidDate) + ' ' + c.paidDate.slice(0, 4) : '未確認'}</dd>
-          <dt>終了予定日</dt><dd class="num">${s ? mdw(s.end) + ' ' + s.end.getFullYear() : '—'}</dd>
-          <dt>チェックイン</dt><dd>${dowName(c.checkinDow)}</dd>
-          <dt>面談曜日</dt><dd>${dowName(c.meetingDow)}</dd>
-          <dt>メモ</dt><dd>${esc(c.memo || '—')}</dd>
-        </dl>
-      </section>
-    `;
-    bindWeekForm(c, s, sel);
-    drawChart(c);
+      ${head(san(c.name), sub, { back: '#/', bar: s && s.cur >= 1 ? Math.min(s.cur, WEEKS) / WEEKS * 100 : null,
+        right: `<a class="hd-btn text" href="#/edit/${encodeURIComponent(id)}">編集</a>` })}
+      ${modeSwitch([
+        { key: 'week', label: '今週', icon: ICON.week },
+        { key: 'record', label: '記録', icon: ICON.chart },
+        { key: 'info', label: '情報', icon: ICON.info },
+      ], tab, 'dtab')}
+      ${body}`;
+    if (tab === 'record') { bindWeekForm(c, s, state.selWeek[id]); drawChart(c); }
   }
 
-  function weekForm(c, s, w) {
+  // ---------- 今週 ----------
+  function weekTab(c, s) {
+    const send = sendCard(c);
+    if (!s || s.cur === 0 || c.status !== ST.ACTIVE) {
+      const note = c.status === ST.WAIT
+        ? (c.paidDate ? '入金確認済みです。「編集」で開始日とチェックイン曜日を入れると、毎週の予定が自動で出ます。'
+          : '入金を確認したら「編集」で入金確認日と開始日を入れてください。')
+        : !s ? '「編集」で開始日を入れると、毎週の予定が自動で出ます。'
+          : s.cur === 0 ? `プログラムは ${mdw(s.start)} から始まります。` : 'このお客様は進行中ではありません。';
+      return `${send}<div class="note">${note}</div>`;
+    }
+    const w = Math.min(s.cur, WEEKS);
     const r = rec(c.id, w) || {};
-    const range = s ? `${md(weekStart(s, w))}〜${md(weekEnd(s, w))}` : '';
-    const ci = s ? dowInWeek(s, w, c.checkinDow) : null;
+    const t = today();
+    const ci = dowInWeek(s, w, c.checkinDow);
+    const mt = dowInWeek(s, w, c.meetingDow);
+    const items = [
+      { act: 'tg-checkin', done: !!r.checkinDone, title: 'チェックインを受け取る',
+        sub: r.submittedAt ? `お客様から届きました（${dt(r.submittedAt)}）` : ci ? `予定 ${mdw(ci)}` : 'チェックイン曜日が未設定です',
+        late: !r.checkinDone && ci && ci < t },
+      { act: 'tg-meeting', done: !!r.meetingDate, title: '個別面談（60分）',
+        sub: r.meetingDate ? `実施 ${mdwS(r.meetingDate)}` : mt ? `予定 ${mdw(mt)}` : '今週中に実施',
+        late: !r.meetingDate && mt && mt < t },
+      { act: 'tg-report', done: !!r.reportSent, title: '週間レポートを送る', sub: '振り返りと改善提案', late: false },
+    ];
+    for (const ev of EVALS) {
+      if (ev.week !== w) continue;
+      const due = evalDue(c, s, ev);
+      items.push({ act: 'tg-eval', key: ev.key, done: !!c[ev.key], title: `${ev.label === '開始時' ? '開始時' : ev.week + '週目'}の身体評価`,
+        sub: c[ev.key] ? `実施 ${mdwS(c[ev.key])}` : `予定 ${mdw(due)}`, late: !c[ev.key] && due < t });
+    }
+    if (s.cur >= 11) {
+      items.push({ act: 'tg-final', done: !!c.finalDone, title: '最終評価（12週の変化と今後の計画）',
+        sub: c.finalDone ? `実施 ${mdwS(c.finalDone)}` : `〜${mdw(s.end)}　内容は「情報」に記入`, late: !c.finalDone && s.end < t });
+    }
+    const doneN = items.filter((x) => x.done).length;
+    const past = buildTasks().overdue.filter((x) => x.c.id === c.id && x.w !== w && x.kind !== 'go');
+    state.tasks = {};
+
+    return `
+      <div class="meta"><div class="focus">${w}週目のやること<span>${md(weekStart(s, w))}〜${md(weekEnd(s, w))}</span></div>
+        <div class="prog"><div class="pc">${doneN}/${items.length}</div><div class="pl">完了</div>
+        <div class="bar"><i style="width:${(doneN / items.length * 100).toFixed(1)}%"></i></div></div></div>
+      ${submissionCard(r)}
+      <div class="list">${items.map((it, i) => `
+        <div class="ex${it.done ? ' done' : ''}${it.late ? ' late' : ''}">
+          <button type="button" class="ex-do" data-act="${it.act}" data-w="${w}"${it.key ? ` data-key="${it.key}"` : ''}>
+            <span class="num"><span>${i + 1}</span><i>${ICON.check}</i></span>
+            <span class="ex-b"><span class="ex-t">${esc(it.title)}</span><span class="ex-s">${esc(it.sub)}${it.late ? '　遅れ' : ''}</span></span>
+          </button>
+        </div>`).join('')}
+      </div>
+      <div class="steps">
+        ${stepCard('フォーム添削', 'formVideos', r.formVideos || 0, FORM_MAX, '本', `上限${FORM_MAX}本`, w)}
+        ${stepCard('食事記録の確認', 'mealDays', r.mealDays || 0, 7, '日', `目安${MEAL_TARGET}日`, w)}
+      </div>
+      ${past.length ? `<div class="sec overdue"><h2>前の週の抜け</h2><span>${past.length}</span></div>
+        <div class="list">${past.map((x) => taskCard(x, 'overdue')).join('')}</div>` : ''}
+      ${send}`;
+  }
+
+  function stepCard(label, name, v, max, unit, hint, w) {
+    return `<div class="step"><div class="step-l">${label}<small>${hint}</small></div>
+      <div class="stepper"><button type="button" data-act="step" data-name="${name}" data-d="-1" data-max="${max}" data-w="${w}" aria-label="減らす">−</button>
+      <output>${v}<small>${unit}</small></output>
+      <button type="button" data-act="step" data-name="${name}" data-d="1" data-max="${max}" data-w="${w}" aria-label="増やす">＋</button></div></div>`;
+  }
+
+  function submissionCard(r) {
+    if (!r || !r.submittedAt) return '';
+    const n = scoreOf(r);
+    return `<div class="card sub">
+      <div class="card-h">${ICON.line}<span>お客様から届いたチェックイン</span><small>${esc(dt(r.submittedAt))}</small></div>
+      <div class="sub-grid">
+        <div><small>週平均体重</small><b>${kg(avgW(r))}</b></div>
+        <div><small>チェックシート</small><b>${n == null ? '—' : n + '/7'}</b></div>
+        <div><small>体調</small><b>${esc(r.condition || '—')}</b></div>
+      </div>
+      ${r.clientWin ? `<p><small>うまくいったこと</small>${esc(r.clientWin)}</p>` : ''}
+      ${r.clientNote ? `<p><small>困っていること・質問</small>${esc(r.clientNote)}</p>` : ''}
+    </div>`;
+  }
+
+  // ---------- お客様に送るリンク ----------
+  function formUrl(c) { return `${location.origin}/form.html#${c.formKey}`; }
+  function lineMessage(c) {
+    const url = formUrl(c);
+    if (!(c.intake && c.intake.submittedAt)) {
+      const head0 = c.paidDate ? 'ご入金を確認しました。ありがとうございます。' : 'このたびはお申し込みありがとうございます。';
+      return `${san(c.name)}\n${head0}畠山です。\n\n開始前に、こちらの事前ヒアリングにご回答をお願いします（5分ほど）。\n${url}\n\nこのリンクは、開始後の毎週のチェックインにも使います。ブックマークしておいてください。`;
+    }
+    return `${san(c.name)}\n今週のチェックインをお願いします。\n${url}`;
+  }
+  function sendCard(c) {
+    if (!c.formKey) {
+      return `<div class="card"><div class="card-h"><span>お客様に送るリンク</span></div>
+        <button class="btn primary block" type="button" data-act="issuekey">リンクを作る</button></div>`;
+    }
+    const intake = c.intake && c.intake.submittedAt;
+    return `<div class="card send">
+      <div class="card-h"><span>${intake ? 'チェックインのお願いを送る' : '事前ヒアリングを送る'}</span>
+        <small class="${intake ? 'ok' : 'warn'}">${intake ? 'ヒアリング回答済み' : 'ヒアリング未回答'}</small></div>
+      <div class="send-row">
+        <a class="btn line" href="https://line.me/R/share?text=${encodeURIComponent(lineMessage(c))}" target="_blank" rel="noopener noreferrer">${ICON.line}LINEで送る</a>
+        <button class="btn" type="button" data-act="copymsg">コピー</button>
+      </div>
+      <details class="msg"><summary>送る文章を見る</summary><textarea class="msgbox" readonly rows="8">${esc(lineMessage(c))}</textarea>
+        <button class="btn tiny ghost" type="button" data-act="issuekey" data-reissue="1">リンクを作り直す</button></details>
+    </div>`;
+  }
+
+  // ---------- 記録 ----------
+  function recordTab(c, s) {
+    const w = state.selWeek[c.id];
+    const r = rec(c.id, w) || {};
+    let tabs = '';
+    for (let i = 1; i <= WEEKS; i++) {
+      const has = rec(c.id, i);
+      tabs += `<button type="button" class="tab${i === w ? ' on' : ''}${s && s.cur === i ? ' cur' : ''}" data-act="selweek" data-w="${i}"><span class="t-l">${i}</span><span class="t-s">${has && (has.checkinDone || has.weights.length) ? '●' : '週'}</span></button>`;
+    }
     const weights = (r.weights || []).slice();
     while (weights.length < 3) weights.push('');
     const checks = (r.checks || '').padEnd(7, '0');
-    let tabs = '';
-    for (let i = 1; i <= WEEKS; i++) {
-      tabs += `<button type="button" class="num${i === w ? ' sel' : ''}${s && s.cur === i ? ' cur' : ''}" data-act="selweek" data-w="${i}">${i}週</button>`;
-    }
     return `
-      <h2>週の記録 <span class="muted small num">${range}</span></h2>
-      <div class="week-tabs" id="weekTabs">${tabs}</div>
-      ${r.submittedAt ? `<div class="sub-box">
-        <div class="ttl">お客様から提出（${esc(dt(r.submittedAt))}）${r.condition ? `　体調：${esc(r.condition)}` : ''}</div>
-        ${r.clientWin ? `<p><b>うまくいったこと：</b>${esc(r.clientWin)}</p>` : ''}
-        ${r.clientNote ? `<p><b>困っていること・質問：</b>${esc(r.clientNote)}</p>` : ''}
-        <p class="muted small">体重とチェックシートは下の欄に反映済みです。</p>
-      </div>` : ''}
-      <form id="weekForm" novalidate>
-        <label class="toggle"><input type="checkbox" name="checkinDone"${r.checkinDone ? ' checked' : ''}>
-          <span>チェックインを受け取った${ci ? `<span class="muted small">（予定 ${mdw(ci)}）</span>` : ''}</span></label>
-
-        <div class="field">
-          <span class="lbl">体重（kg）</span>
+      <div class="card chart-card"><div class="card-h"><span>推移</span><small>週平均体重・スコア</small></div>
+        <div class="chart-box"><canvas id="chart" aria-label="週平均体重とスコアの推移"></canvas></div><div id="chartMsg" class="muted small"></div></div>
+      <div class="tabs"><div class="tabs-inner t6">${tabs}</div></div>
+      ${submissionCard(r)}
+      <form id="weekForm" class="card form" novalidate>
+        <div class="card-h"><span>${w}週目の記録</span><small>${s ? `${md(weekStart(s, w))}〜${md(weekEnd(s, w))}` : ''}</small></div>
+        <div class="field"><span class="lbl">体重（kg）</span>
           <div class="weights" id="weights">${weights.map((v) => `<input type="number" inputmode="decimal" step="0.1" min="20" max="400" value="${esc(v)}" aria-label="体重">`).join('')}</div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-            <span class="avg">週平均 <b class="num" id="avg">—</b></span>
-            <button class="btn tiny" type="button" data-act="addweight">＋ 入力欄</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <span class="lbl">チェックシート（毎週5分｜身体づくりチェックシート）</span>
-          <div class="checklist">
-            ${CHECK_ITEMS.map((txt, i) => `<label class="check"><input type="checkbox" name="ck${i}"${checks[i] === '1' ? ' checked' : ''}><span>${i + 1}. ${txt}</span></label>`).join('')}
-          </div>
-          <div class="score" id="score"></div>
-        </div>
-
-        <div class="field">
-          <label for="meetingDate">面談実施日</label>
-          <input type="date" id="meetingDate" name="meetingDate" value="${esc(r.meetingDate || '')}">
-        </div>
-
+          <div class="row-sb"><span class="avg">週平均 <b id="avg">—</b></span><button class="btn tiny" type="button" data-act="addweight">＋ 入力欄</button></div></div>
+        <div class="field"><span class="lbl">チェックシート</span>
+          <div class="checklist">${CHECK_ITEMS.map((txt, i) => `<label class="check"><input type="checkbox" name="ck${i}"${checks[i] === '1' ? ' checked' : ''}><span>${esc(txt)}</span></label>`).join('')}</div>
+          <div class="score" id="score"></div></div>
         <div class="grid2">
-          <div class="field">
-            <span class="lbl">フォーム添削（上限${FORM_MAX}本）</span>
-            <div class="stepper" data-name="formVideos" data-max="${FORM_MAX}">
-              <button type="button" data-act="step" data-d="-1" aria-label="減らす">−</button>
-              <output class="num">${r.formVideos || 0}</output>
-              <button type="button" data-act="step" data-d="1" aria-label="増やす">＋</button>
-            </div>
-          </div>
-          <div class="field">
-            <span class="lbl">食事記録の確認（目安${MEAL_TARGET}日）</span>
-            <div class="stepper" data-name="mealDays" data-max="7">
-              <button type="button" data-act="step" data-d="-1" aria-label="減らす">−</button>
-              <output class="num">${r.mealDays || 0}</output>
-              <button type="button" data-act="step" data-d="1" aria-label="増やす">＋</button>
-            </div>
-          </div>
+          <label class="toggle"><input type="checkbox" name="checkinDone"${r.checkinDone ? ' checked' : ''}><span>チェックイン受取</span></label>
+          <label class="toggle"><input type="checkbox" name="reportSent"${r.reportSent ? ' checked' : ''}><span>レポート送付</span></label>
         </div>
-
-        <div class="field">
-          <label class="toggle"><input type="checkbox" name="reportSent"${r.reportSent ? ' checked' : ''}><span>週間レポートを送付した</span></label>
+        <div class="grid2">
+          <div class="field"><label for="meetingDate">面談実施日</label><input type="date" id="meetingDate" name="meetingDate" value="${esc(r.meetingDate || '')}"></div>
+          <div class="field"><label for="formVideos">添削（本）</label><input type="number" id="formVideos" name="formVideos" min="0" max="${FORM_MAX}" value="${r.formVideos || 0}"></div>
         </div>
-
-        <div class="field">
-          <label for="wmemo">メモ</label>
-          <textarea id="wmemo" name="memo" rows="3">${esc(r.memo || '')}</textarea>
-        </div>
-
-        <div class="actions"><button class="btn primary block" type="submit">${w}週目を保存</button></div>
+        <div class="field"><label for="mealDays">食事記録の確認（日）</label><input type="number" id="mealDays" name="mealDays" min="0" max="7" value="${r.mealDays || 0}"></div>
+        <div class="field"><label for="wmemo">メモ</label><textarea id="wmemo" name="memo" rows="3">${esc(r.memo || '')}</textarea></div>
+        <button class="btn primary block" type="submit">${w}週目を保存</button>
       </form>`;
   }
 
@@ -889,7 +851,6 @@
     if (!f) return;
     const r = rec(c.id, w) || {};
     let checksTouched = hasScore(r);
-
     const readWeights = () => [...f.querySelectorAll('#weights input')]
       .map((i) => parseFloat(i.value)).filter((n) => isFinite(n) && n >= 20 && n <= 400);
     const update = () => {
@@ -899,7 +860,7 @@
       const sc = document.getElementById('score');
       if (!checksTouched) { sc.className = 'score'; sc.innerHTML = '<span class="muted">未入力</span>'; return; }
       sc.className = 'score lv' + scoreLv(n);
-      sc.innerHTML = `<span>スコア <b class="num">${n}/7</b></span><b>${scoreLabel(n)}</b>`;
+      sc.innerHTML = `<span>スコア <b>${n}/7</b></span><b>${scoreLabel(n)}</b>`;
     };
     f.addEventListener('input', (e) => {
       state.dirty = true;
@@ -907,19 +868,17 @@
       update();
     });
     update();
-
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = f.querySelector('[type="submit"]');
       const label = btn.textContent;
       btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
-      const out = (name) => Number(f.querySelector(`.stepper[data-name="${name}"] output`).textContent) || 0;
       const patch = {
         weights: readWeights(),
         checkinDone: f.checkinDone.checked,
         meetingDate: f.meetingDate.value || '',
-        formVideos: out('formVideos'),
-        mealDays: out('mealDays'),
+        formVideos: Number(f.formVideos.value) || 0,
+        mealDays: Number(f.mealDays.value) || 0,
         reportSent: f.reportSent.checked,
         memo: f.memo.value,
       };
@@ -927,17 +886,47 @@
       try {
         await patchWeek(c.id, w, patch);
         toast(`${w}週目を保存しました`);
-        state.dirty = false;
-        const y = window.scrollY;
-        render();
-        window.scrollTo(0, y);
+        keepScroll(render);
       } catch (_) {
         btn.disabled = false; btn.textContent = label;
       }
     });
   }
 
-  function finalPanel(c, s) {
+  // ---------- 情報 ----------
+  function infoTab(c, s) {
+    const st = stats(c);
+    const t = today();
+    const tile = (label, v, total, miss) => `<div class="tile${miss ? ' warn' : v >= total ? ' full' : ''}"><b>${v}<small>/${total}</small></b><span>${label}</span></div>`;
+    const dowName = (d) => (d === '' || d == null ? '未設定' : DOW[d] + '曜');
+    const evalRows = EVALS.map((ev) => {
+      const due = s ? evalDue(c, s, ev) : null;
+      const miss = !c[ev.key] && due && due < t;
+      return `<div class="eval${miss ? ' miss' : ''}"><span>${ev.label}<small>予定 ${mdw(due)}</small></span>
+        <input type="date" value="${esc(c[ev.key] || '')}" data-act="evaldate" data-key="${ev.key}" aria-label="${ev.label}の実施日"></div>`;
+    }).join('');
+    return `
+      <div class="tiles">
+        ${tile('面談', st.meet, WEEKS, st.missMeet)}${tile('評価', st.evals, 4, st.missEval)}
+        ${tile('レポート', st.rep, WEEKS, st.missRep)}${tile('チェックイン', st.chk, WEEKS, st.missChk)}
+      </div>
+      <div class="card"><div class="card-h"><span>目標・身体評価</span><small>実施日を入れる</small></div>${evalRows}</div>
+      ${s && (s.cur >= 11 || c.finalDone || c.finalPlan) ? finalCard(c, s) : ''}
+      <div class="card"><div class="card-h"><span>基本情報</span><a class="btn tiny" href="#/edit/${encodeURIComponent(c.id)}">編集</a></div>
+        <dl class="kv">
+          <dt>LINE名</dt><dd>${esc(c.lineName || '—')}</dd>
+          <dt>目標</dt><dd>${esc(c.goal || '—')}</dd>
+          <dt>入金確認日</dt><dd>${c.paidDate ? mdwS(c.paidDate) : '未確認'}</dd>
+          <dt>期間</dt><dd>${s ? `${mdw(s.start)}〜${mdw(s.end)}` : '開始日未定'}</dd>
+          <dt>チェックイン</dt><dd>${dowName(c.checkinDow)}</dd>
+          <dt>面談</dt><dd>${dowName(c.meetingDow)}</dd>
+          <dt>メモ</dt><dd>${esc(c.memo || '—')}</dd>
+        </dl></div>
+      ${intakeCard(c)}
+      <p class="small muted center">LINEの返信：原則2営業日以内（日曜・祝日は返信なし）</p>`;
+  }
+
+  function finalCard(c, s) {
     const recs = [];
     for (let w = 1; w <= WEEKS; w++) recs.push(rec(c.id, w));
     const withW = recs.map((r, i) => ({ w: i + 1, v: avgW(r) })).filter((x) => x.v != null);
@@ -946,27 +935,30 @@
     const lastW = withW[withW.length - 1];
     const diff = first && lastW && lastW.w !== first.w ? lastW.v - first.v : null;
     const avgS = withS.length ? withS.reduce((a, b) => a + b, 0) / withS.length : null;
-    return `
-      <section class="panel">
-        <h2>最終評価 <span class="muted small">12週の変化と今後の計画</span></h2>
-        <div class="final-sum">
-          <div><span>週平均体重</span><b class="num">${first ? kg(first.v) : '—'}</b><span class="num">${first ? first.w + '週 → ' + (lastW ? lastW.w + '週 ' + kg(lastW.v) : '') : ''}</span></div>
-          <div><span>変化</span><b class="num">${diff == null ? '—' : (diff > 0 ? '+' : '') + diff.toFixed(1) + 'kg'}</b></div>
-          <div><span>平均スコア</span><b class="num">${avgS == null ? '—' : avgS.toFixed(1) + '/7'}</b><span>${withS.length}週分</span></div>
-        </div>
-        <form id="finalForm">
-          <div class="field" style="margin-top:0">
-            <label for="finalPlan">今後の計画（継続の相談内容も）</label>
-            <textarea id="finalPlan" name="finalPlan" rows="4">${esc(c.finalPlan || '')}</textarea>
-          </div>
-          <div class="field">
-            <label for="finalDone">最終評価の実施日</label>
-            <input type="date" id="finalDone" name="finalDone" value="${esc(c.finalDone || '')}">
-            <div class="hint">終了予定日：${mdw(s.end)}</div>
-          </div>
-          <div class="field"><button class="btn primary block" type="submit">最終評価を保存</button></div>
-        </form>
-      </section>`;
+    return `<form id="finalForm" class="card form">
+      <div class="card-h"><span>最終評価</span><small>〜${mdw(s.end)}</small></div>
+      <div class="tiles t3">
+        <div class="tile"><b>${first ? kg(first.v) : '—'}</b><span>${first ? first.w + '週目' : '最初'}</span></div>
+        <div class="tile"><b>${diff == null ? '—' : (diff > 0 ? '+' : '') + diff.toFixed(1) + 'kg'}</b><span>変化</span></div>
+        <div class="tile"><b>${avgS == null ? '—' : avgS.toFixed(1)}</b><span>平均スコア</span></div>
+      </div>
+      <div class="field"><label for="finalPlan">今後の計画（継続の相談も）</label><textarea id="finalPlan" name="finalPlan" rows="4">${esc(c.finalPlan || '')}</textarea></div>
+      <div class="field"><label for="finalDone">実施日</label><input type="date" id="finalDone" name="finalDone" value="${esc(c.finalDone || '')}"></div>
+      <button class="btn primary block" type="submit">保存</button>
+    </form>`;
+  }
+
+  function intakeCard(c) {
+    if (!(c.intake && c.intake.submittedAt)) return '';
+    const a = c.intake.answers || {};
+    const qs = INTAKE.sections.flatMap((sec) => sec.questions);
+    const val = (q) => (q.type === 'radio' ? a[q.id + '__label'] || a[q.id] : a[q.id] ? a[q.id] + (q.unit ? ' ' + q.unit : '') : '') || '—';
+    // いまの質問にない回答（質問を差し替える前の回答）も消さずに出す
+    const known = new Set(qs.map((q) => q.id));
+    const extra = Object.keys(a).filter((k) => !known.has(k) && !k.endsWith('__label'));
+    return `<details class="card qa"><summary class="card-h"><span>事前ヒアリングの回答</span><small>${esc(dt(c.intake.submittedAt))}</small></summary>
+      <dl class="kv stack">${qs.map((q) => `<dt>${esc(q.label)}</dt><dd>${esc(val(q))}</dd>`).join('')}
+      ${extra.map((k) => `<dt>${esc(k)}</dt><dd>${esc(a[k + '__label'] || a[k])}</dd>`).join('')}</dl></details>`;
   }
 
   async function loadChartJs() {
@@ -990,8 +982,8 @@
     }
     const msg = document.getElementById('chartMsg');
     if (!wt.some((v) => v != null) && !sc.some((v) => v != null)) {
-      if (msg) msg.textContent = '記録が入るとグラフが表示されます。';
-      const box = document.querySelector('.chart-box'); if (box) box.style.height = '0';
+      if (msg) msg.textContent = '記録が入るとグラフが出ます。';
+      const box = document.querySelector('.chart-box'); if (box) box.style.display = 'none';
       return;
     }
     let Chart;
@@ -1005,39 +997,37 @@
       data: {
         labels,
         datasets: [
-          { type: 'line', label: '週平均体重（kg）', data: wt, yAxisID: 'y', borderColor: v('--primary'), backgroundColor: v('--primary'),
-            spanGaps: true, tension: 0.25, pointRadius: 3, borderWidth: 2, order: 1 },
-          { type: 'bar', label: 'スコア（/7）', data: sc, yAxisID: 'y1', backgroundColor: v('--dot-empty'), borderRadius: 4, maxBarThickness: 18, order: 2 },
+          { type: 'line', label: '週平均体重（kg）', data: wt, yAxisID: 'y', borderColor: v('--accent-bright'), backgroundColor: v('--accent-bright'),
+            spanGaps: true, tension: 0.3, pointRadius: 3, borderWidth: 2.5, order: 1 },
+          { type: 'bar', label: 'スコア（/7）', data: sc, yAxisID: 'y1', backgroundColor: 'rgba(255,255,255,.12)', borderRadius: 5, maxBarThickness: 16, order: 2 },
         ],
       },
       options: {
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { labels: { color: v('--muted'), boxWidth: 12, font: { size: 11 } } } },
+        plugins: { legend: { labels: { color: v('--muted'), boxWidth: 10, font: { size: 11 } } } },
         scales: {
           x: { ticks: { color: v('--muted'), font: { size: 10 } }, grid: { display: false } },
-          y: { position: 'left', ticks: { color: v('--muted'), font: { size: 10 } }, grid: { color: v('--line') } },
+          y: { position: 'left', ticks: { color: v('--muted'), font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.06)' } },
           y1: { position: 'right', min: 0, max: 7, ticks: { stepSize: 1, color: v('--muted'), font: { size: 10 } }, grid: { display: false } },
         },
       },
     });
   }
 
-  // ================================================================ 画面3：追加・編集
+  // ================================================================ 追加・編集
 
   /** 新規登録：名前・LINE名・入金確認日だけ。保存するとすぐ送るリンクが出る */
   function renderNew() {
     $app.innerHTML = `
-      ${topBar('お客様を追加', '#/')}
-      <form id="newForm" novalidate>
-        <div class="field"><label for="n-name">名前（必須）</label><input type="text" id="n-name" name="name" autocomplete="off"></div>
-        <div class="field"><label for="n-line">LINE名（必須）</label><input type="text" id="n-line" name="lineName" autocomplete="off"></div>
-        <div class="field"><label for="n-paid">入金確認日</label><input type="date" id="n-paid" name="paidDate">
-          <div class="hint">まだの場合は空欄でOK。あとから「編集」で入れられます。</div></div>
+      ${head('お客様を追加', '3つ入れるだけ。追加すると送るリンクができます', { back: '#/' })}
+      <form id="newForm" class="card form" novalidate>
+        <div class="field"><label for="n-name">名前</label><input type="text" id="n-name" name="name" autocomplete="off" placeholder="例：田中 太郎"></div>
+        <div class="field"><label for="n-line">LINE名</label><input type="text" id="n-line" name="lineName" autocomplete="off"></div>
+        <div class="field"><label for="n-paid">入金確認日<small>まだなら空欄でOK</small></label><input type="date" id="n-paid" name="paidDate"></div>
         <div id="editErr"></div>
-        <div class="actions"><button class="btn primary block" type="submit">追加してリンクを作る</button></div>
-      </form>
-      <div class="plan">追加すると、お客様に送る<b>事前ヒアリングのリンク</b>と案内文ができます。<br>開始日・チェックイン曜日などは、入金確認後に「編集」から入れられます。</div>`;
+        <button class="btn primary block" type="submit">追加してリンクを作る</button>
+      </form>`;
     const f = document.getElementById('newForm');
     f.addEventListener('input', () => { state.dirty = true; });
     f.addEventListener('submit', async (e) => {
@@ -1056,6 +1046,7 @@
         state.clients.push(d.client);
         saveCache();
         state.dirty = false;
+        ui.tab[d.client.id] = 'week';
         toast('追加しました。リンクを送ってください');
         location.hash = '#/c/' + encodeURIComponent(d.client.id);
       } catch (ex) {
@@ -1067,50 +1058,39 @@
   }
 
   function renderEdit(id) {
-    const c = id ? state.clients.find((x) => x.id === id) : null;
-    if (id && !c) { location.hash = '#/'; return; }
-    const v = c || { name: '', lineName: '', startDate: '', checkinDow: '', meetingDow: '', goal: '', paidDate: '', status: ST.WAIT, memo: '' };
-    const dowOpts = (sel) => `<option value="">未設定</option>` +
+    const c = state.clients.find((x) => x.id === id);
+    if (!c) { location.hash = '#/'; return; }
+    const dowOpts = (sel) => '<option value="">未設定</option>' +
       DOW.map((d, i) => `<option value="${i}"${String(sel) === String(i) ? ' selected' : ''}>${d}曜</option>`).join('');
-
     $app.innerHTML = `
-      ${topBar(c ? san(c.name) + 'を編集' : 'お客様を追加', c ? '#/c/' + encodeURIComponent(c.id) : '#/')}
-      <form id="editForm" novalidate>
-        <div class="field"><label for="f-name">名前（必須）</label><input type="text" id="f-name" name="name" required value="${esc(v.name)}" autocomplete="off"></div>
-        <div class="field"><label for="f-line">LINE名</label><input type="text" id="f-line" name="lineName" value="${esc(v.lineName)}" autocomplete="off"></div>
+      ${head(san(c.name), '編集', { back: '#/c/' + encodeURIComponent(id) })}
+      <form id="editForm" class="card form" novalidate>
+        <div class="field"><label for="f-name">名前</label><input type="text" id="f-name" name="name" value="${esc(c.name)}" autocomplete="off"></div>
+        <div class="field"><label for="f-line">LINE名</label><input type="text" id="f-line" name="lineName" value="${esc(c.lineName)}" autocomplete="off"></div>
         <div class="grid2">
-          <div class="field"><label for="f-paid">入金確認日</label><input type="date" id="f-paid" name="paidDate" value="${esc(v.paidDate)}"></div>
-          <div class="field"><label for="f-start">開始日</label><input type="date" id="f-start" name="startDate" value="${esc(v.startDate)}"></div>
+          <div class="field"><label for="f-paid">入金確認日</label><input type="date" id="f-paid" name="paidDate" value="${esc(c.paidDate)}"></div>
+          <div class="field"><label for="f-start">開始日</label><input type="date" id="f-start" name="startDate" value="${esc(c.startDate)}"></div>
         </div>
-        <div class="hint muted small" id="endHint"></div>
+        <div class="hint" id="endHint"></div>
         <div class="grid2">
-          <div class="field"><label for="f-ci">チェックイン曜日</label><select id="f-ci" name="checkinDow">${dowOpts(v.checkinDow)}</select></div>
-          <div class="field"><label for="f-mt">面談曜日（任意）</label><select id="f-mt" name="meetingDow">${dowOpts(v.meetingDow)}</select></div>
+          <div class="field"><label for="f-ci">チェックイン曜日</label><select id="f-ci" name="checkinDow">${dowOpts(c.checkinDow)}</select></div>
+          <div class="field"><label for="f-mt">面談曜日</label><select id="f-mt" name="meetingDow">${dowOpts(c.meetingDow)}</select></div>
         </div>
-        <div class="field"><label for="f-goal">目標</label><textarea id="f-goal" name="goal" rows="2">${esc(v.goal)}</textarea></div>
         <div class="field"><label for="f-st">状態</label>
-          <select id="f-st" name="status">${STATUSES.map((s) => `<option${s === v.status ? ' selected' : ''}>${s}</option>`).join('')}</select>
-        </div>
-        <div class="field"><label for="f-memo">メモ</label><textarea id="f-memo" name="memo" rows="3">${esc(v.memo)}</textarea></div>
+          <select id="f-st" name="status">${STATUSES.map((s) => `<option${s === c.status ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
+        <div class="field"><label for="f-goal">目標</label><textarea id="f-goal" name="goal" rows="2">${esc(c.goal)}</textarea></div>
+        <div class="field"><label for="f-memo">メモ</label><textarea id="f-memo" name="memo" rows="3">${esc(c.memo)}</textarea></div>
         <div id="editErr"></div>
-        <div class="actions"><button class="btn primary block" type="submit">${c ? '保存' : '追加する'}</button></div>
+        <button class="btn primary block" type="submit">保存</button>
       </form>
-
-      <div class="plan">
-        <b>プラン</b>　3ヶ月（12週）／完全オンライン／30万円（税込33万円）<br>
-        支払い：銀行振込。入金確認後に開始／初回カウンセリング60分<br>
-        3ヶ月以降の継続：個別相談
-      </div>
-
-      ${c ? `<div class="field" style="margin-top:28px"><button class="btn danger-quiet block" type="button" data-act="delete" data-id="${esc(c.id)}">このお客様を削除</button></div>` : ''}
-    `;
+      <div class="note">プラン：3ヶ月（12週）／完全オンライン／30万円（税込33万円）。銀行振込、入金確認後に開始。初回カウンセリング60分。3ヶ月以降の継続は個別相談。</div>
+      <button class="btn danger-quiet block" type="button" data-act="delete" data-id="${esc(c.id)}">このお客様を削除</button>`;
 
     const f = document.getElementById('editForm');
     const endHint = () => {
       const st = pd(f.startDate.value);
       document.getElementById('endHint').textContent = st
-        ? `終了予定日：${mdw(addDays(st, WEEKS * 7 - 1))} ${addDays(st, WEEKS * 7 - 1).getFullYear()}（12週）`
-        : '開始日を入れると終了予定日を自動で出します。';
+        ? `終了予定日：${mdw(addDays(st, WEEKS * 7 - 1))}（12週）` : '開始日を入れると終了予定日と毎週の予定が自動で出ます。';
     };
     endHint();
     f.addEventListener('input', (e) => {
@@ -1128,80 +1108,74 @@
       if (!name) { err.innerHTML = '<div class="err">名前を入力してください。</div>'; f.name.focus(); return; }
       if (f.status.value === ST.ACTIVE && !f.startDate.value) { err.innerHTML = '<div class="err">「進行中」にするには開始日が必要です。</div>'; return; }
       const data = {
-        name, lineName: f.lineName.value.trim(), paidDate: f.paidDate.value, startDate: f.startDate.value,
+        id: c.id, name, lineName: f.lineName.value.trim(), paidDate: f.paidDate.value, startDate: f.startDate.value,
         checkinDow: f.checkinDow.value, meetingDow: f.meetingDow.value, goal: f.goal.value, status: f.status.value, memo: f.memo.value,
       };
       const btn = f.querySelector('[type="submit"]');
       btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
       try {
-        const d = await api('saveClient', { client: c ? Object.assign({ id: c.id }, data) : data });
+        const d = await api('saveClient', { client: data });
         const i = state.clients.findIndex((x) => x.id === d.client.id);
-        if (i >= 0) state.clients[i] = d.client; else state.clients.push(d.client);
+        if (i >= 0) state.clients[i] = d.client;
         saveCache();
         state.dirty = false;
-        toast(c ? '保存しました' : '追加しました');
+        toast('保存しました');
         location.hash = '#/c/' + encodeURIComponent(d.client.id);
       } catch (ex) {
         err.innerHTML = `<div class="err">${esc(errText(ex))}</div>`;
-        btn.disabled = false; btn.textContent = c ? '保存' : '追加する';
+        btn.disabled = false; btn.textContent = '保存';
       }
     });
   }
 
-  // ================================================================ イベント
+  // ================================================================ 操作
 
   $app.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
-    if (!el) return;
+    if (!el || el.tagName === 'INPUT') return;
     const act = el.dataset.act;
     const cid = decodeURIComponent((location.hash.split('/')[2] || ''));
+    const c = state.clients.find((x) => x.id === cid);
 
+    if (act === 'home') { ui.home = el.dataset.v; return render(); }
+    if (act === 'list') { ui.list = el.dataset.v; return render(); }
+    if (act === 'dtab') { ui.tab[cid] = el.dataset.v; return render(); }
     if (act === 'refresh') return refresh({ force: true });
     if (act === 'backup') return downloadBackup();
-    if (act === 'copymsg') {
-      const c = state.clients.find((x) => x.id === cid);
-      try { await navigator.clipboard.writeText(lineMessage(c)); toast('案内文をコピーしました'); }
-      catch (_) { const t = document.querySelector('.msgbox'); t.select(); toast('案内文を選択しました。コピーしてください'); }
-      return;
-    }
-    if (act === 'copylink') {
-      const c = state.clients.find((x) => x.id === cid);
-      try { await navigator.clipboard.writeText(formUrl(c)); toast('リンクをコピーしました'); }
-      catch (_) { toast('コピーできませんでした。案内文からコピーしてください'); }
-      return;
-    }
-    if (act === 'issuekey') {
-      if (el.dataset.reissue && !confirm('リンクを作り直すと、今までのリンクは使えなくなります。よろしいですか？')) return;
-      el.disabled = true;
-      try {
-        const d = await api('issueFormKey', { id: cid });
-        const i = state.clients.findIndex((x) => x.id === cid);
-        if (i >= 0) state.clients[i] = d.client;
-        saveCache();
-        toast(el.dataset.reissue ? '新しいリンクを発行しました' : 'リンクを発行しました');
-      } catch (ex) { toast(errText(ex)); }
-      return render();
-    }
     if (act === 'logout') { if (confirm('ログアウトしますか？')) logout(); return; }
     if (act === 'done' || act === 'go') {
       const task = state.tasks[el.dataset.tid];
       if (!task) return;
       if (act === 'go') { location.hash = task.href; return; }
-      return onTaskDone(task, el.closest('.task'));
+      return onTaskDone(task, el.closest('.tk'));
     }
-    if (act === 'selweek') {
-      state.selWeek[cid] = Number(el.dataset.w);
-      const c = state.clients.find((x) => x.id === cid);
-      const s = c && sched(c);
-      document.querySelectorAll('.tl .wkh').forEach((b) => b.classList.toggle('sel', Number(b.dataset.w) === state.selWeek[cid]));
-      const panel = document.getElementById('weekPanel');
-      panel.innerHTML = weekForm(c, s, state.selWeek[cid]);
-      bindWeekForm(c, s, state.selWeek[cid]);
-      if (el.classList.contains('wkh')) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      const tab = panel.querySelector('.week-tabs .sel');
-      if (tab) tab.scrollIntoView({ block: 'nearest', inline: 'center' });
+
+    // 今週の4項目：タップで 済 ⇄ 未
+    if (act.startsWith('tg-') && c) {
+      const w = Number(el.dataset.w);
+      const r = rec(c.id, w) || {};
+      el.disabled = true;
+      el.parentElement.classList.toggle('done');
+      try {
+        if (act === 'tg-checkin') await patchWeek(c.id, w, { checkinDone: !r.checkinDone });
+        if (act === 'tg-report') await patchWeek(c.id, w, { reportSent: !r.reportSent });
+        if (act === 'tg-meeting') await patchWeek(c.id, w, { meetingDate: r.meetingDate ? '' : fd(today()) });
+        if (act === 'tg-eval') await patchClient(c.id, { [el.dataset.key]: c[el.dataset.key] ? '' : fd(today()) });
+        if (act === 'tg-final') await patchClient(c.id, { finalDone: c.finalDone ? '' : fd(today()) });
+      } catch (_) { /* toast 済 */ }
+      return keepScroll(render);
+    }
+    if (act === 'step' && c) {
+      const w = Number(el.dataset.w);
+      const name = el.dataset.name;
+      const r = rec(c.id, w) || {};
+      const v = Math.max(0, Math.min(Number(el.dataset.max), (Number(r[name]) || 0) + Number(el.dataset.d)));
+      if (v === (Number(r[name]) || 0)) return;
+      el.closest('.stepper').querySelector('output').firstChild.textContent = v;
+      try { await patchWeek(c.id, w, { [name]: v }); } catch (_) { keepScroll(render); }
       return;
     }
+    if (act === 'selweek') { state.selWeek[cid] = Number(el.dataset.w); return keepScroll(render); }
     if (act === 'addweight') {
       const box = document.getElementById('weights');
       const i = document.createElement('input');
@@ -1210,26 +1184,31 @@
       box.appendChild(i); i.focus();
       return;
     }
-    if (act === 'step') {
-      const st = el.closest('.stepper');
-      const o = st.querySelector('output');
-      o.textContent = Math.max(0, Math.min(Number(st.dataset.max), (Number(o.textContent) || 0) + Number(el.dataset.d)));
-      state.dirty = true;
+    if (act === 'copymsg' && c) {
+      try { await navigator.clipboard.writeText(lineMessage(c)); toast('送る文章をコピーしました'); }
+      catch (_) { const d = document.querySelector('details.msg'); d.open = true; d.querySelector('textarea').select(); toast('文章を選択しました。コピーしてください'); }
       return;
     }
-    if (act === 'evaldone') {
-      el.disabled = true;
-      try { await patchClient(cid, { [el.dataset.key]: fd(today()) }); toast('身体評価を「済」にしました'); } catch (_) { /* toast 済 */ }
-      return render();
-    }
-    if (act === 'delete') {
-      const c = state.clients.find((x) => x.id === el.dataset.id);
-      if (!c || !confirm(`${san(c.name)}のデータ（週の記録も含む）を削除します。元に戻せません。よろしいですか？`)) return;
+    if (act === 'issuekey' && c) {
+      if (el.dataset.reissue && !confirm('リンクを作り直すと、今までのリンクは使えなくなります。よろしいですか？')) return;
       el.disabled = true;
       try {
-        await api('deleteClient', { id: c.id });
-        state.clients = state.clients.filter((x) => x.id !== c.id);
-        delete state.weeks[c.id];
+        const d = await api('issueFormKey', { id: cid });
+        const i = state.clients.findIndex((x) => x.id === cid);
+        if (i >= 0) state.clients[i] = d.client;
+        saveCache();
+        toast(el.dataset.reissue ? '新しいリンクを作りました' : 'リンクを作りました');
+      } catch (ex) { toast(errText(ex)); }
+      return keepScroll(render);
+    }
+    if (act === 'delete') {
+      const d = state.clients.find((x) => x.id === el.dataset.id);
+      if (!d || !confirm(`${san(d.name)}のデータ（週の記録も含む）を削除します。元に戻せません。よろしいですか？`)) return;
+      el.disabled = true;
+      try {
+        await api('deleteClient', { id: d.id });
+        state.clients = state.clients.filter((x) => x.id !== d.id);
+        delete state.weeks[d.id];
         saveCache();
         toast('削除しました');
         location.hash = '#/';
@@ -1241,8 +1220,8 @@
     const el = e.target;
     const cid = decodeURIComponent((location.hash.split('/')[2] || ''));
     if (el.dataset.act === 'evaldate') {
-      try { await patchClient(cid, { [el.dataset.key]: el.value || '' }); toast(el.value ? '実施日を更新しました' : '実施日を消しました'); } catch (_) { /* toast 済 */ }
-      render();
+      try { await patchClient(cid, { [el.dataset.key]: el.value || '' }); toast(el.value ? '実施日を保存しました' : '実施日を消しました'); } catch (_) { /* toast 済 */ }
+      keepScroll(render);
     }
   });
 
@@ -1256,8 +1235,7 @@
     try {
       await patchClient(cid, { finalPlan: f.finalPlan.value, finalDone: f.finalDone.value || '' });
       toast('最終評価を保存しました');
-      state.dirty = false;
-      const y = window.scrollY; render(); window.scrollTo(0, y);
+      keepScroll(render);
     } catch (_) { btn.disabled = false; }
   });
 
