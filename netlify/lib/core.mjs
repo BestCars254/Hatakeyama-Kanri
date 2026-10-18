@@ -234,13 +234,12 @@ async function formGet(key, store) {
 async function formIntake(key, answers, store) {
   const id = await clientIdByKey(key, store);
   const clean = cleanAnswers(answers);
-  if (!clean.name) throw new ApiError('bad_request');
+  if (!Object.keys(clean).length) throw new ApiError('bad_request');
   const now = new Date().toISOString();
   await update(store, id, (d) => {
     if (d.client.formKey !== key) throw new ApiError('invalid_link');
     const c = { ...d.client, intake: { answers: clean, submittedAt: now }, updatedAt: now };
     // 空いている項目は回答から自動で埋める（畠山さんが入力済みの値は上書きしない）
-    if (!c.lineName && clean.line_name) c.lineName = String(clean.line_name).slice(0, 200);
     if (!c.goal && clean.goal_12w) c.goal = String(clean.goal_12w).slice(0, 5000);
     const dow = Number(clean.checkin_dow);
     if (c.checkinDow === '' && clean.checkin_dow !== '' && Number.isInteger(dow) && dow >= 0 && dow <= 6) c.checkinDow = dow;

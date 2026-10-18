@@ -420,7 +420,7 @@
       if (c === 'w' && Number(d) >= 1 && Number(d) <= WEEKS) state.selWeek[decodeURIComponent(b)] = Number(d);
       return renderDetail(decodeURIComponent(b));
     }
-    if (a === 'new') return renderEdit(null);
+    if (a === 'new') return renderNew();
     if (a === 'edit' && b) return renderEdit(decodeURIComponent(b));
     return renderHome();
   }
@@ -601,7 +601,8 @@
   function lineMessage(c) {
     const url = formUrl(c);
     if (!(c.intake && c.intake.submittedAt)) {
-      return `${san(c.name)}\nご入金ありがとうございます。畠山です。\n開始前に、こちらの事前ヒアリングにご回答をお願いします（10〜15分ほど）。\n${url}\n\nこのリンクは開始後の「毎週のチェックイン」にも使います。ブックマークしておいてください。`;
+      const head = c.paidDate ? 'ご入金を確認しました。ありがとうございます。' : 'このたびはお申し込みありがとうございます。';
+      return `${san(c.name)}\n${head}畠山です。\n\n開始前に、こちらの事前ヒアリングにご回答をお願いします（5分ほど）。\n${url}\n\nこのリンクは、開始後の毎週のチェックインにも使います。ブックマークしておいてください。`;
     }
     return `${san(c.name)}\n今週のチェックインをお願いします。\n${url}`;
   }
@@ -616,10 +617,11 @@
       <h2>お客様用リンク <span class="badge${done ? ' active' : ''}">${done ? 'ヒアリング回答済み' : 'ヒアリング未回答'}</span></h2>
       <p class="muted small" style="margin:0 0 8px">${done ? '開くと毎週のチェックイン画面になります。送られた内容は週の記録に自動で入ります。'
         : '最初に開くと事前ヒアリング、回答後は毎週のチェックイン画面になります。'}</p>
-      <div class="linkbox"><input type="text" readonly value="${esc(formUrl(c))}" aria-label="お客様用リンク"></div>
+      <textarea class="msgbox" readonly rows="7" aria-label="送る案内文">${esc(lineMessage(c))}</textarea>
       <div class="link-actions">
         <a class="btn primary" href="https://line.me/R/share?text=${encodeURIComponent(lineMessage(c))}" target="_blank" rel="noopener noreferrer">LINEで送る</a>
-        <button class="btn" type="button" data-act="copylink">コピー</button>
+        <button class="btn" type="button" data-act="copymsg">案内文をコピー</button>
+        <button class="btn" type="button" data-act="copylink">リンクだけコピー</button>
         <button class="btn tiny ghost" type="button" data-act="issuekey" data-reissue="1">リンクを作り直す</button>
       </div>
     </section>`;
@@ -640,7 +642,10 @@
   }
 
   function groupNote(c) {
-    if (c.status === ST.WAIT) return c.startDate ? '開始予定 ' + mdwS(c.startDate) : '開始日未定';
+    if (c.status === ST.WAIT) {
+      const h = c.intake && c.intake.submittedAt ? 'ヒアリング済' : 'ヒアリング未';
+      return (c.paidDate ? '入金済・' : '入金待ち・') + h + (c.startDate ? '・開始 ' + md(pd(c.startDate)) : '');
+    }
     const s = sched(c);
     return s ? md(s.start) + '〜' + md(s.end) : '';
   }
@@ -1020,6 +1025,47 @@
 
   // ================================================================ 画面3：追加・編集
 
+  /** 新規登録：名前・LINE名・入金確認日だけ。保存するとすぐ送るリンクが出る */
+  function renderNew() {
+    $app.innerHTML = `
+      ${topBar('お客様を追加', '#/')}
+      <form id="newForm" novalidate>
+        <div class="field"><label for="n-name">名前（必須）</label><input type="text" id="n-name" name="name" autocomplete="off"></div>
+        <div class="field"><label for="n-line">LINE名（必須）</label><input type="text" id="n-line" name="lineName" autocomplete="off"></div>
+        <div class="field"><label for="n-paid">入金確認日</label><input type="date" id="n-paid" name="paidDate">
+          <div class="hint">まだの場合は空欄でOK。あとから「編集」で入れられます。</div></div>
+        <div id="editErr"></div>
+        <div class="actions"><button class="btn primary block" type="submit">追加してリンクを作る</button></div>
+      </form>
+      <div class="plan">追加すると、お客様に送る<b>事前ヒアリングのリンク</b>と案内文ができます。<br>開始日・チェックイン曜日などは、入金確認後に「編集」から入れられます。</div>`;
+    const f = document.getElementById('newForm');
+    f.addEventListener('input', () => { state.dirty = true; });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = document.getElementById('editErr');
+      const name = f.name.value.trim(), lineName = f.lineName.value.trim();
+      if (!name || !lineName) {
+        err.innerHTML = '<div class="err">名前とLINE名を入力してください。</div>';
+        (name ? f.lineName : f.name).focus();
+        return;
+      }
+      const btn = f.querySelector('[type="submit"]');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+      try {
+        const d = await api('saveClient', { client: { name, lineName, paidDate: f.paidDate.value, status: ST.WAIT } });
+        state.clients.push(d.client);
+        saveCache();
+        state.dirty = false;
+        toast('追加しました。リンクを送ってください');
+        location.hash = '#/c/' + encodeURIComponent(d.client.id);
+      } catch (ex) {
+        err.innerHTML = `<div class="err">${esc(errText(ex))}</div>`;
+        btn.disabled = false; btn.textContent = '追加してリンクを作る';
+      }
+    });
+    setTimeout(() => f.name.focus(), 50);
+  }
+
   function renderEdit(id) {
     const c = id ? state.clients.find((x) => x.id === id) : null;
     if (id && !c) { location.hash = '#/'; return; }
@@ -1112,10 +1158,16 @@
 
     if (act === 'refresh') return refresh({ force: true });
     if (act === 'backup') return downloadBackup();
+    if (act === 'copymsg') {
+      const c = state.clients.find((x) => x.id === cid);
+      try { await navigator.clipboard.writeText(lineMessage(c)); toast('案内文をコピーしました'); }
+      catch (_) { const t = document.querySelector('.msgbox'); t.select(); toast('案内文を選択しました。コピーしてください'); }
+      return;
+    }
     if (act === 'copylink') {
       const c = state.clients.find((x) => x.id === cid);
       try { await navigator.clipboard.writeText(formUrl(c)); toast('リンクをコピーしました'); }
-      catch (_) { const i = document.querySelector('.linkbox input'); i.select(); toast('リンクを選択しました。コピーしてください'); }
+      catch (_) { toast('コピーできませんでした。案内文からコピーしてください'); }
       return;
     }
     if (act === 'issuekey') {

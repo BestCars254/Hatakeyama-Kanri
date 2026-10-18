@@ -85,6 +85,7 @@
     $app.innerHTML = `
       ${header(Q.title)}
       <section class="f-intro">
+        <p>${esc(data.client.name)}さん、お申し込みありがとうございます。</p>
         ${Q.intro.map((p) => `<p>${esc(p)}</p>`).join('')}
         <p class="muted">${esc(Q.time)}</p>
         <p class="req-note"><span class="req">*</span> 必須の質問です</p>

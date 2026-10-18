@@ -368,3 +368,4 @@ details.panel[open] > summary::after { content: "－"; }
 body.client .actions { position: static; }
 .f-inline .f-opt { padding: 10px 8px; gap: 6px; white-space: nowrap; }
 .score > b:last-child { white-space: nowrap; }
+.msgbox { font-size: 13.5px; line-height: 1.6; background: var(--surface-2); color: var(--ink); min-height: 0; }
