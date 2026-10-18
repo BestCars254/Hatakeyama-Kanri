@@ -340,8 +340,8 @@
   function setSyncing(on) {
     const b = document.querySelector('[data-act="refresh"]');
     if (!b) return;
-    if (on) { b.dataset.label = b.innerHTML; b.disabled = true; b.innerHTML = '<span class="spin"></span>更新中…'; }
-    else { b.disabled = false; if (b.dataset.label) b.innerHTML = b.dataset.label; }
+    if (on) { b.dataset.label = b.innerHTML; b.disabled = true; b.style.opacity = '.5'; }
+    else { b.disabled = false; b.style.opacity = ''; }
   }
 
   function logout() {
@@ -411,12 +411,31 @@
   }
 
   // ================================================================ 描画：共通
-  // 画面の作りは RafaCoach の管理アプリに合わせている：
-  // ホーム（数字のタイル → 対応が必要なお客様 → タップで下からシート）／お客様の詳細（表 → 今週のタスク → 履歴）／下のナビ
+  // 情報の並びは RafaCoach の管理アプリ（数字 → 対応が必要 → タップでシート → 詳細）。
+  // 見た目と操作は Apple の HIG（iOS）に合わせる：ナビゲーションバー＋大きなタイトル、
+  // 設定アプリ型のグループ、リマインダー型の丸いチェック、ステッパー、スイッチ、シート、浮いたタブバー。
 
   const PRICE = 330000; // 3ヶ月プラン（税込）
   const ui = { filter: 'all', q: '', sheet: null };
-  let T = null; // buildTasks() の結果（描画ごとに作り直す）
+  let T = null;
+
+  const I = { // SF Symbols に似せた線のアイコン
+    house: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg>',
+    people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.3"/><path d="M3 19.5c.6-3.4 3-5.4 6-5.4s5.4 2 6 5.4"/><circle cx="17.2" cy="9" r="2.5"/><path d="M16 14.3c2.6 0 4.5 1.8 5 5.2"/></svg>',
+    yen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 7.5 12 12l3.5-4.5M12 12v5M9 12.5h6M9 15h6"/></svg>',
+    gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    back: '<svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:20px"><path d="M10 2 2 10l8 8"/></svg>',
+    chev: '<svg viewBox="0 0 9 15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m1.5 1.5 6 6-6 6"/></svg>',
+    check: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m2.5 7.3 3 3 6-6.6"/></svg>',
+    search: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7.5" cy="7.5" r="5.5"/><path d="m11.5 11.5 4.5 4.5"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><path d="M12 6.5v7" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.4" fill="#fff"/></svg>',
+    ok: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><path d="m7.5 12.3 3 3 6-6.6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    x: '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m2 2 8 8M10 2l-8 8"/></svg>',
+    msg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.5c-5 0-9 3.2-9 7.2 0 3.6 3.2 6.6 7.5 7.1.3.1.7.2.8.5.1.2.1.6 0 .9l-.1.8c0 .2-.2.9.8.5s5.4-3.2 7.4-5.5c1.3-1.4 2-2.9 2-4.3 0-4-4-7.2-9-7.2z"/></svg>',
+    person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c.8-4 3.8-6.2 7.5-6.2s6.7 2.2 7.5 6.2"/></svg>',
+  };
+  const chev = `<span class="chev">${I.chev}</span>`;
 
   function render() {
     if (chart) { chart.destroy(); chart = null; }
@@ -424,7 +443,7 @@
     T = null;
     document.body.classList.remove('sheet-open');
     if (!getToken()) return renderLogin();
-    if (!state.ready) { $app.innerHTML = '<div class="loading"><span class="spin"></span>読み込み中…</div>'; return; }
+    if (!state.ready) { $app.innerHTML = '<div class="loading"><span class="spin"></span></div>'; return; }
     const [a, b, c, d] = location.hash.replace(/^#\/?/, '').split('/');
     if (a === 'c' && b && c === 'w' && Number(d) >= 1 && Number(d) <= WEEKS) return renderWeekEdit(decodeURIComponent(b), Number(d));
     if (a === 'c' && b) return renderDetail(decodeURIComponent(b));
@@ -436,33 +455,34 @@
     return renderHome();
   }
 
-  function topbar(title, sub, back, live) {
-    return `<header class="topbar">
-      ${back ? `<a class="tb-back" href="${back}" aria-label="戻る">‹</a>` : ''}
-      <div class="tb-text"><h1>${esc(title)}${live ? '<i class="live"></i>' : ''}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
-    </header>`;
+  /** ナビゲーションバー。large=true でトップレベル（大きなタイトルを下に出す） */
+  function navbar(o) {
+    return `<header class="nav${o.solid ? ' solid' : ''}"><div class="nav-bar">
+      <div class="nav-l">${o.back ? `<a class="nav-btn" href="${o.back}">${I.back}<span>${esc(o.backLabel || '戻る')}</span></a>` : ''}</div>
+      <div class="nav-title">${esc(o.title)}</div>
+      <div class="nav-r">${o.right || ''}</div>
+    </div></header>`;
   }
-
-  function nav(cur) {
-    const it = (href, key, ic, label) => `<a href="${href}" class="${cur === key ? 'on' : ''}"><span class="ic">${ic}</span><span>${label}</span></a>`;
-    return `<nav class="bnav">
-      ${it('#/', 'home', '⌂', 'ホーム')}
-      ${it('#/clients', 'clients', '👥', 'お客様')}
-      <a href="#/new" class="add"><span class="ic">＋</span><span>追加</span></a>
-      ${it('#/money', 'money', '💰', '売上')}
-      ${it('#/menu', 'menu', '≡', 'メニュー')}
-    </nav>`;
+  const addBtn = `<a class="nav-btn icon" href="#/new" aria-label="お客様を追加">${I.plus}</a>`;
+  function largeTitle(title, small, sub) {
+    return `<div class="large">${small ? `<small>${esc(small)}</small>` : ''}<h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
   }
+  function tabbar(cur) {
+    const it = (href, key, ic, label) => `<a href="${href}" class="${cur === key ? 'on' : ''}"${cur === key ? ' aria-current="page"' : ''}>${ic}<span>${label}</span></a>`;
+    return `<nav class="tabbar" aria-label="メイン">${it('#/', 'home', I.house, 'ホーム')}${it('#/clients', 'clients', I.people, 'お客様')}${it('#/money', 'money', I.yen, '売上')}${it('#/menu', 'menu', I.gear, '設定')}</nav>`;
+  }
+  function group(header, inner, footer, cls) {
+    return `<section class="group">${header ? `<h2 class="gh${cls ? ' ' + cls : ''}">${header}</h2>` : ''}<div class="list">${inner}</div>${footer ? `<p class="gf">${footer}</p>` : ''}</section>`;
+  }
+  const kv = (k, v, cls) => `<div class="cell"><span class="cell-main"><span class="t">${k}</span></span><span class="v ${cls || ''}">${v}</span></div>`;
 
   // ---------- お客様ごとの「いま必要なこと」 ----------
   const SHORT = { checkin: 'チェックイン', meeting: '面談', report: 'レポート', eval: '身体評価', final: '最終評価' };
-
   function tasksOf(cid) {
     if (!T) T = buildTasks();
     const pick = (arr) => arr.filter((x) => x.c.id === cid);
-    return { overdue: pick(T.overdue), today: pick(T.today), week: pick(T.week) };
+    return { overdue: pick(T.overdue), today: pick(T.today) };
   }
-
   /** level: late（遅れ）/ today（今日）/ info（気づき） */
   function issues(c) {
     const t = today();
@@ -482,29 +502,29 @@
     if (c.status !== ST.ACTIVE) return out;
     const tk = tasksOf(c.id);
     for (const x of tk.overdue) {
-      if (x.kind === 'go') out.push({ short: x.key === 'ended' ? '12週終了' : '開始日', long: x.key === 'ended' ? '状態の更新（12週終了）' : '開始日の設定', days: since(x.date), level: 'late' });
-      else out.push({ short: SHORT[x.kind], long: SHORT[x.kind], days: since(x.date), level: 'late', task: x });
+      if (x.kind === 'go') out.push({ short: x.key === 'ended' ? '12週終了' : '開始日', long: x.key === 'ended' ? '状態の更新' : '開始日の設定', days: since(x.date), level: 'late' });
+      else out.push({ short: SHORT[x.kind], long: SHORT[x.kind], days: since(x.date), level: 'late' });
     }
-    for (const x of tk.today) if (x.kind !== 'go') out.push({ short: SHORT[x.kind], long: SHORT[x.kind], level: 'today', task: x });
+    for (const x of tk.today) if (x.kind !== 'go') out.push({ short: SHORT[x.kind], long: SHORT[x.kind], level: 'today' });
     if (!intake) out.push({ short: 'ヒアリング', long: 'ヒアリングの回答', level: 'info' });
     return out;
   }
   const needsYou = (iss) => iss.some((i) => i.level !== 'info');
-  function pill(iss) {
+  const maxDays = (iss) => Math.max(0, ...iss.map((i) => i.days || 0));
+  function badge(iss) {
     const late = iss.filter((i) => i.level === 'late').sort((a, b) => (b.days || 0) - (a.days || 0));
-    if (late.length) return `<span class="pill late">${esc(late[0].short)}${late[0].days ? `・${late[0].days}日` : ''}</span>`;
+    if (late.length) return `<span class="badge late">${esc(late[0].short)}${late[0].days ? ` ${late[0].days}日` : ''}</span>`;
     const td = iss.find((i) => i.level === 'today');
-    if (td) return `<span class="pill today">${esc(td.short)}・今日</span>`;
+    if (td) return `<span class="badge today">${esc(td.short)} 今日</span>`;
     const info = iss.find((i) => i.level === 'info');
-    if (info) return `<span class="pill info">${esc(info.short)}未</span>`;
-    return '<span class="pill ok">順調</span>';
+    if (info) return `<span class="badge info">${esc(info.short)}未</span>`;
+    return '<span class="badge ok">順調</span>';
   }
-  function bannerText(iss) {
+  function lateText(iss) {
     const late = iss.filter((i) => i.level === 'late');
     if (!late.length) return '';
-    const names = [...new Set(late.map((i) => i.long))];
-    const max = Math.max(...late.map((i) => i.days || 0));
-    return `${names.join(' + ')}${max ? `・${max}日前から` : ''}`;
+    const m = maxDays(late);
+    return `${[...new Set(late.map((i) => i.long))].join('・')}${m ? `（${m}日前から）` : ''}`;
   }
   function subLine(c) {
     const s = sched(c);
@@ -512,29 +532,32 @@
     if (c.status === ST.DONE) return '終了';
     if (c.status === ST.CONSULT) return '継続相談';
     if (!s) return '開始日未定';
-    if (s.cur === 0) return `${mdw(s.start)} 開始`;
+    if (s.cur === 0) return `${mdw(s.start)}に開始`;
     if (s.cur > WEEKS) return '12週終了';
-    return `${s.cur}週目/12・チェックイン ${c.checkinDow === '' ? '未設定' : DOW[c.checkinDow] + '曜'}`;
+    return `${s.cur}週目／12週・チェックイン${c.checkinDow === '' ? '未設定' : DOW[c.checkinDow] + '曜'}`;
+  }
+  function clientCell(c, iss) {
+    return `<button type="button" class="cell" data-act="sheet" data-id="${esc(c.id)}">
+      <span class="cell-main"><span class="t b">${esc(san(c.name))}</span><span class="s">${esc(subLine(c))}</span></span>
+      ${badge(iss)}${chev}</button>`;
   }
 
   // ================================================================ ログイン
 
   function renderLogin(msg) {
     $app.innerHTML = `
-      <section class="login">
-        <form id="loginForm" autocomplete="on">
-          <div class="login-logo">HATAKEYAMA<i class="live"></i></div>
-          <p class="muted">顧客管理（関係者専用）</p>
-          <input type="text" name="username" value="hatakeyama-kanri" autocomplete="username" hidden>
-          <input id="pw" type="password" name="password" autocomplete="current-password" placeholder="パスワード" aria-label="パスワード" required>
-          <button class="btn primary block" type="submit">ログイン</button>
-          ${msg ? `<div class="err">${esc(msg)}</div>` : ''}
-        </form>
-      </section>`;
+      <section class="login"><form id="loginForm" autocomplete="on">
+        <div class="login-ic">${I.person}</div>
+        <h1>顧客管理</h1><p>畠山祐輔さん・関係者専用</p>
+        <input type="text" name="username" value="hatakeyama-kanri" autocomplete="username" hidden>
+        ${group('', `<label class="cell"><span class="lab">パスワード</span><input id="pw" type="password" name="password" autocomplete="current-password" placeholder="必須" required></label>`)}
+        ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
+        <div class="btns"><button class="btn filled" type="submit">ログイン</button></div>
+      </form></section>`;
     const f = document.getElementById('loginForm');
     f.addEventListener('submit', async (ev) => {
       ev.preventDefault();
-      const btn = f.querySelector('button');
+      const btn = f.querySelector('button[type=submit]');
       btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
       try {
         const d = await api('login', { password: f.password.value });
@@ -542,118 +565,93 @@
         state.ready = false;
         render();
         await refresh({ force: true });
-      } catch (e) {
-        renderLogin(errText(e));
-      }
+      } catch (e) { renderLogin(errText(e)); }
     });
     setTimeout(() => { const p = document.getElementById('pw'); if (p) p.focus(); }, 50);
   }
 
   // ================================================================ ホーム
 
-  function counts() {
-    const n = { active: 0, wait: 0, done: 0, late: 0 };
-    for (const c of state.clients) {
-      if (c.status === ST.ACTIVE) n.active++;
-      else if (c.status === ST.WAIT) n.wait++;
-      else n.done++;
-      if (issues(c).some((i) => i.level === 'late')) n.late++;
-    }
-    return n;
-  }
   function paidIn(y, m) { return state.clients.filter((c) => { const d = pd(c.paidDate); return d && d.getFullYear() === y && d.getMonth() === m; }); }
   const yen = (n) => '¥' + n.toLocaleString('ja-JP');
 
-  function tiles(n) {
-    return `<div class="tiles">
-      <a class="tile blue" href="#/clients" data-act="filter" data-v="${ST.ACTIVE}"><span>進行中</span><b>${n.active}</b></a>
-      <a class="tile green" href="#/clients" data-act="filter" data-v="${ST.WAIT}"><span>入金待ち</span><b>${n.wait}</b></a>
-      <a class="tile slate" href="#/clients" data-act="filter" data-v="${ST.DONE}"><span>終了</span><b>${n.done}</b></a>
-      <a class="tile late" href="#/clients" data-act="filter" data-v="late"><span>遅れ</span><b>${n.late}</b></a>
-    </div>`;
-  }
-
-  function row(c, iss) {
-    const late = iss.some((i) => i.level === 'late');
-    return `<button type="button" class="row${late ? ' late' : needsYou(iss) ? ' today' : ''}" data-act="sheet" data-id="${esc(c.id)}">
-      <span class="row-b"><span class="row-n">${esc(san(c.name))}</span><span class="row-s">${esc(subLine(c))}</span></span>
-      ${pill(iss)}
-    </button>`;
-  }
-
   function renderHome() {
     const t = today();
-    const n = counts();
+    const n = { active: 0, wait: 0, done: 0, late: 0 };
+    for (const c of state.clients) {
+      if (c.status === ST.ACTIVE) n.active++; else if (c.status === ST.WAIT) n.wait++; else n.done++;
+      if (issues(c).some((i) => i.level === 'late')) n.late++;
+    }
     const paid = paidIn(t.getFullYear(), t.getMonth());
     const list = state.clients.filter((c) => c.status === ST.ACTIVE || c.status === ST.WAIT).map((c) => ({ c, iss: issues(c) }));
-    const need = list.filter((x) => needsYou(x.iss))
-      .sort((a, b) => Math.max(0, ...b.iss.map((i) => i.days || 0)) - Math.max(0, ...a.iss.map((i) => i.days || 0)));
+    const need = list.filter((x) => needsYou(x.iss)).sort((a, b) => maxDays(b.iss) - maxDays(a.iss));
     const fine = list.filter((x) => !needsYou(x.iss));
     const subs = recentSubmissions();
-    const wd = `${t.getMonth() + 1}月${t.getDate()}日（${DOW[t.getDay()]}）`;
+    const sum = (key, label, v, color, cls) => `<a class="sum${cls ? ' ' + cls : ''}" href="#/clients" data-act="filter" data-v="${key}"><span><i class="dot" style="background:${color}"></i>${label}</span><b>${v}</b></a>`;
 
     $app.innerHTML = `
-      ${topbar('HATAKEYAMA', wd, null, true)}
-      <div class="wrap">
-        ${tiles(n)}
-        <p class="money-line">💰 ${t.getMonth() + 1}月の入金：<b>${yen(paid.length * PRICE)}</b>（${paid.length}名）</p>
-        <a class="search" href="#/clients">🔍 お客様を検索…</a>
-        ${need.length ? `<div class="banner">🚨 ${need.length}名があなたを待っています。下から順に対応してください 👇</div>`
-          : '<div class="banner ok">✅ 今日やることはすべて済んでいます</div>'}
-        ${subs.length ? `<h2 class="sh new">📩 お客様から届いた（${subs.length}）</h2>
-          <div class="rows">${subs.map((x) => `<a class="row new" href="#/c/${encodeURIComponent(x.c.id)}">
-            <span class="row-b"><span class="row-n">${esc(san(x.c.name))}</span><span class="row-s">${esc(x.text)}・${esc(dt(x.at))}</span></span>
-            <span class="pill new">新着</span></a>`).join('')}</div>` : ''}
-        ${need.length ? `<h2 class="sh late">🚨 対応が必要（${need.length}）</h2><div class="rows">${need.map((x) => row(x.c, x.iss)).join('')}</div>` : ''}
-        ${fine.length ? `<h2 class="sh">✅ 順調（${fine.length}）</h2><div class="rows">${fine.map((x) => row(x.c, x.iss)).join('')}</div>` : ''}
-        ${state.clients.length ? '' : '<div class="empty">まだお客様がいません。下の「＋ 追加」から登録できます。</div>'}
-      </div>
+      ${navbar({ title: 'ホーム', right: addBtn })}
+      <main class="page">
+        ${largeTitle('ホーム', `${t.getMonth() + 1}月${t.getDate()}日 ${DOW[t.getDay()]}曜日`)}
+        <div class="summary">
+          ${sum(ST.ACTIVE, '進行中', n.active, 'var(--tint)')}${sum(ST.WAIT, '入金待ち', n.wait, 'var(--teal)')}
+          ${sum(ST.DONE, '終了', n.done, 'var(--gray)')}${sum('late', '遅れ', n.late, 'var(--brown)', n.late ? 'late' : '')}
+        </div>
+        ${group('', `<a class="cell" href="#/money"><span class="cell-main"><span class="t">${t.getMonth() + 1}月の入金</span></span><span class="v strong">${yen(paid.length * PRICE)}（${paid.length}名）</span>${chev}</a>`)}
+        ${need.length ? `<div class="notice"><span class="ic">${I.warn}</span><div><b>${need.length}名が対応を待っています</b><span>上から順に、タップして済にしてください。</span></div></div>`
+          : '<div class="notice ok"><span class="ic">' + I.ok + '</span><div><b>今日やることはすべて済んでいます</b></div></div>'}
+        ${subs.length ? group('お客様から届いた', subs.map((x) => `<a class="cell" href="#/c/${encodeURIComponent(x.c.id)}">
+            <span class="cell-main"><span class="t b">${esc(san(x.c.name))}</span><span class="s">${esc(x.text)}・${esc(dt(x.at))}</span></span><span class="badge new">新着</span>${chev}</a>`).join('')) : ''}
+        ${need.length ? group(`対応が必要（${need.length}）`, need.map((x) => clientCell(x.c, x.iss)).join('')) : ''}
+        ${fine.length ? group(`順調（${fine.length}）`, fine.map((x) => clientCell(x.c, x.iss)).join('')) : ''}
+        ${state.clients.length ? '' : group('', '<div class="empty">まだお客様がいません。右上の＋から追加できます。</div>')}
+      </main>
       ${ui.sheet ? sheet(ui.sheet) : ''}
-      ${nav('home')}`;
+      ${tabbar('home')}`;
     if (ui.sheet) document.body.classList.add('sheet-open');
   }
 
-  /** 新着（直近3日） */
   function recentSubmissions() {
     const since = Date.now() - RECENT_MS;
     const out = [];
     for (const c of state.clients) {
       if (c.intake && c.intake.submittedAt && Date.parse(c.intake.submittedAt) > since) out.push({ c, at: c.intake.submittedAt, text: 'ヒアリングに回答' });
-      for (const r of Object.values(state.weeks[c.id] || {})) {
-        if (r.submittedAt && Date.parse(r.submittedAt) > since) out.push({ c, at: r.submittedAt, text: `${r.week}週目のチェックイン` });
-      }
+      for (const r of Object.values(state.weeks[c.id] || {})) if (r.submittedAt && Date.parse(r.submittedAt) > since) out.push({ c, at: r.submittedAt, text: `${r.week}週目のチェックイン` });
     }
     return out.sort((a, b) => b.at.localeCompare(a.at));
   }
-  function dt(iso) {
-    const d = new Date(iso);
-    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
+  function dt(iso) { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; }
 
-  // ---------- 今週のタスク（シートと詳細で共通） ----------
+  // ---------- 今週のタスク（リマインダー型） ----------
   function weekTasks(c) {
     const s = sched(c);
-    if (c.status === ST.WAIT) {
-      return [{ act: 'tg-paid', done: !!c.paidDate, label: '入金確認', ic: '💰', doneLabel: `入金済 ${c.paidDate ? md(pd(c.paidDate)) : ''}` }];
-    }
+    const t = today();
+    if (c.status === ST.WAIT) return [{ act: 'tg-paid', done: !!c.paidDate, label: '入金を確認した', sub: c.paidDate ? `${mdwS(c.paidDate)}に確認` : '確認すると売上に入ります' }];
     if (c.status !== ST.ACTIVE || !s || s.cur < 1) return [];
     const w = Math.min(s.cur, WEEKS);
     const r = rec(c.id, w) || {};
+    const ci = dowInWeek(s, w, c.checkinDow);
+    const mt = dowInWeek(s, w, c.meetingDow);
     const out = [
-      { act: 'tg-checkin', w, done: !!r.checkinDone, label: 'チェックイン受取', ic: '📅', doneLabel: 'チェックイン' },
-      { act: 'tg-meeting', w, done: !!r.meetingDate, label: '面談', ic: '🗣', doneLabel: '面談' },
-      { act: 'tg-report', w, done: !!r.reportSent, label: 'レポート送付', ic: '📝', doneLabel: 'レポート' },
+      { act: 'tg-checkin', w, done: !!r.checkinDone, label: 'チェックインを受け取った',
+        sub: r.submittedAt ? `お客様から届いた（${dt(r.submittedAt)}）` : ci ? `予定 ${mdw(ci)}` : 'チェックイン曜日が未設定', late: !r.checkinDone && ci && ci < t },
+      { act: 'tg-meeting', w, done: !!r.meetingDate, label: '個別面談（60分）', sub: r.meetingDate ? `${mdwS(r.meetingDate)}に実施` : mt ? `予定 ${mdw(mt)}` : '今週中', late: !r.meetingDate && mt && mt < t },
+      { act: 'tg-report', w, done: !!r.reportSent, label: '週間レポートを送った', sub: '振り返りと改善提案' },
     ];
-    for (const ev of EVALS) if (ev.week === w) out.push({ act: 'tg-eval', key: ev.key, w, done: !!c[ev.key], label: `${ev.label === '開始時' ? '開始時' : ev.week + '週目'}の身体評価`, ic: '📏', doneLabel: '身体評価' });
-    if (s.cur >= 11) out.push({ act: 'tg-final', w, done: !!c.finalDone, label: '最終評価', ic: '🏁', doneLabel: '最終評価' });
+    for (const ev of EVALS) {
+      if (ev.week !== w) continue;
+      const due = evalDue(c, s, ev);
+      out.push({ act: 'tg-eval', key: ev.key, w, done: !!c[ev.key], label: `${ev.label === '開始時' ? '開始時' : ev.week + '週目'}の身体評価`, sub: c[ev.key] ? `${mdwS(c[ev.key])}に実施` : `予定 ${mdw(due)}`, late: !c[ev.key] && due < t });
+    }
+    if (s.cur >= 11) out.push({ act: 'tg-final', w, done: !!c.finalDone, label: '最終評価', sub: c.finalDone ? `${mdwS(c.finalDone)}に実施` : `〜${mdw(s.end)}`, late: !c.finalDone && s.end < t });
     return out;
   }
-  function taskButtons(c) {
-    const ts = weekTasks(c);
-    if (!ts.length) return '';
-    return `<div class="tbtns${ts.length % 2 ? ' odd' : ''}">${ts.map((x) => `
-      <button type="button" class="tbtn${x.done ? ' done' : ''}" data-act="${x.act}" data-id="${esc(c.id)}"${x.w ? ` data-w="${x.w}"` : ''}${x.key ? ` data-key="${x.key}"` : ''}>
-        ${x.ic} ${esc(x.done ? x.doneLabel + ' ✓' : x.label)}</button>`).join('')}</div>`;
+  function taskCells(c) {
+    return weekTasks(c).map((x) => `
+      <button type="button" class="cell${x.done ? ' done' : ''}" role="checkbox" aria-checked="${x.done}" data-act="${x.act}" data-id="${esc(c.id)}"${x.w ? ` data-w="${x.w}"` : ''}${x.key ? ` data-key="${x.key}"` : ''}>
+        <span class="circle${x.done ? ' on' : x.late ? ' late' : ''}">${I.check}</span>
+        <span class="cell-main"><span class="t">${esc(x.label)}</span><span class="s${x.late ? ' late-t' : ''}">${esc(x.sub)}${x.late ? '・遅れ' : ''}</span></span>
+      </button>`).join('');
   }
 
   // ---------- LINE ----------
@@ -669,34 +667,26 @@
   }
   const lineHref = (text) => `https://line.me/R/share?text=${encodeURIComponent(text)}`;
 
-  // ---------- 下から出るシート ----------
+  // ---------- シート ----------
   function sheet(id) {
     const c = state.clients.find((x) => x.id === id);
     if (!c) return '';
     const iss = issues(c);
-    const s = sched(c);
-    const w = s && s.cur >= 1 ? Math.min(s.cur, WEEKS) : null;
-    const r = w ? rec(c.id, w) || {} : {};
-    const ci = w ? dowInWeek(s, w, c.checkinDow) : null;
-    const t = today();
-    const lines = [];
-    if (c.status === ST.WAIT) lines.push(['💰', '入金', c.paidDate ? `済 ${mdwS(c.paidDate)}` : '未確認', !c.paidDate]);
-    lines.push(['📋', 'ヒアリング', c.intake && c.intake.submittedAt ? '回答済み' : '未回答', !(c.intake && c.intake.submittedAt)]);
-    if (w) {
-      lines.push(['📅', 'チェックイン', r.checkinDone ? (r.submittedAt ? `届いた ${dt(r.submittedAt)}` : '受取済') : ci ? `${mdw(ci)}${ci < t ? '（遅れ）' : ''}` : '曜日未設定', !r.checkinDone && ci && ci < t]);
-      lines.push(['🗣', '面談', r.meetingDate ? `済 ${mdwS(r.meetingDate)}` : '今週まだ', false]);
-    }
+    const late = lateText(iss);
     const m = c.formKey ? mainMessage(c) : null;
+    const tasks = taskCells(c);
     return `<div class="sheet-bg" data-act="close-sheet"></div>
-      <section class="sheet" role="dialog" aria-label="${esc(san(c.name))}">
+      <section class="sheet" role="dialog" aria-modal="true" aria-label="${esc(san(c.name))}">
         <div class="grip"></div>
-        <h2>${esc(san(c.name))}</h2>
-        <p class="sheet-sub">${esc(subLine(c))}</p>
-        ${bannerText(iss) ? `<div class="banner">🚨 ${esc(bannerText(iss))}</div>` : ''}
-        <dl class="tbl">${lines.map(([ic, k, v, bad]) => `<div><dt>${ic} ${k}</dt><dd class="${bad ? 'bad' : ''}">${esc(v)}</dd></div>`).join('')}</dl>
-        ${taskButtons(c)}
-        ${m ? `<a class="btn line block" href="${lineHref(m.text)}" target="_blank" rel="noopener noreferrer">💬 ${m.label}</a>` : ''}
-        <a class="btn ghost block" href="#/c/${encodeURIComponent(c.id)}">詳細を見る ›</a>
+        <div class="sheet-h"><div><h2>${esc(san(c.name))}</h2><p>${esc(subLine(c))}</p></div>
+          <button type="button" class="xbtn" data-act="close-sheet" aria-label="閉じる">${I.x}</button></div>
+        ${late ? `<div class="notice"><span class="ic">${I.warn}</span><div><b>遅れています</b><span>${esc(late)}</span></div></div>` : ''}
+        ${tasks ? group('今週のタスク', tasks) : ''}
+        ${group('', kv('ヒアリング', c.intake && c.intake.submittedAt ? '回答済み' : '未回答', c.intake && c.intake.submittedAt ? 'ok-t' : 'late-t'))}
+        <div class="btns">
+          ${m ? `<a class="btn line" href="${lineHref(m.text)}" target="_blank" rel="noopener noreferrer">${I.msg}${m.label}</a>` : ''}
+          <a class="btn gray" href="#/c/${encodeURIComponent(c.id)}">詳細を見る</a>
+        </div>
       </section>`;
   }
 
@@ -711,24 +701,25 @@
       if (f === ST.DONE) return c.status === ST.DONE || c.status === ST.CONSULT;
       if (f !== 'all') return c.status === f;
       return true;
-    }).sort((a, b) => (a.c.startDate || '9').localeCompare(b.c.startDate || '9'));
-    const chips = [['all', '全員'], [ST.ACTIVE, '進行中'], [ST.WAIT, '入金待ち'], [ST.DONE, '終了'], ['late', '遅れ']];
+    }).sort((a, b) => maxDays(b.iss) - maxDays(a.iss) || (a.c.startDate || '9').localeCompare(b.c.startDate || '9'));
+    const segs = [['all', 'すべて'], [ST.ACTIVE, '進行中'], [ST.WAIT, '入金待ち'], [ST.DONE, '終了'], ['late', '遅れ']];
     $app.innerHTML = `
-      ${topbar('お客様', `${state.clients.length}名`)}
-      <div class="wrap">
-        <input class="search" type="search" id="q" placeholder="🔍 名前・LINE名で検索" value="${esc(ui.q)}" autocomplete="off">
-        <div class="chips">${chips.map(([k, l]) => `<button type="button" class="${f === k ? 'on' : ''}" data-act="filter" data-v="${k}">${l}</button>`).join('')}</div>
-        <div class="rows">${arr.map((x) => row(x.c, x.iss)).join('') || '<div class="empty">該当するお客様はいません</div>'}</div>
-      </div>
+      ${navbar({ title: 'お客様', right: addBtn })}
+      <main class="page">
+        ${largeTitle('お客様')}
+        <label class="search">${I.search}<input type="search" id="q" placeholder="検索" value="${esc(ui.q)}" autocomplete="off" enterkeyhint="search"></label>
+        <div class="seg" role="tablist">${segs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${f === k}" class="${f === k ? 'on' : ''}" data-act="filter" data-v="${k}">${l}</button>`).join('')}</div>
+        ${group('', arr.map((x) => clientCell(x.c, x.iss)).join('') || '<div class="empty">該当するお客様はいません</div>', `${arr.length}名`)}
+      </main>
       ${ui.sheet ? sheet(ui.sheet) : ''}
-      ${nav('clients')}`;
+      ${tabbar('clients')}`;
     if (ui.sheet) document.body.classList.add('sheet-open');
     const qi = document.getElementById('q');
     qi.addEventListener('input', () => {
       ui.q = qi.value;
       const pos = qi.selectionStart;
       renderClients();
-      const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos, pos);
+      const n2 = document.getElementById('q'); n2.focus(); n2.setSelectionRange(pos, pos);
     });
   }
 
@@ -737,191 +728,161 @@
   function renderMoney() {
     const t = today();
     const months = [];
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(t.getFullYear(), t.getMonth() - i, 1);
-      const list = paidIn(d.getFullYear(), d.getMonth());
-      months.push({ d, list });
-    }
+    for (let i = 0; i < 12; i++) { const d = new Date(t.getFullYear(), t.getMonth() - i, 1); months.push({ d, list: paidIn(d.getFullYear(), d.getMonth()) }); }
     const total = state.clients.filter((c) => c.paidDate).length;
     $app.innerHTML = `
-      ${topbar('売上', '入金確認日をもとに集計（3ヶ月プラン 税込33万円）')}
-      <div class="wrap">
-        <div class="big-money"><span>${t.getMonth() + 1}月の入金</span><b>${yen(months[0].list.length * PRICE)}</b><small>${months[0].list.length}名</small></div>
-        <div class="card">${months.map(({ d, list }) => `
-          <div class="mrow"><span>${d.getFullYear()}年${d.getMonth() + 1}月</span><span class="muted">${list.length}名</span><b>${yen(list.length * PRICE)}</b></div>
-          ${list.length ? `<div class="mnames">${list.map((c) => `<a href="#/c/${encodeURIComponent(c.id)}">${esc(san(c.name))}（${md(pd(c.paidDate))}）</a>`).join('')}</div>` : ''}`).join('')}
-        </div>
-        <p class="note">累計 ${total}名・${yen(total * PRICE)}。入金が確認できたら、お客様の「入金確認」を押すか、編集で入金確認日を入れてください。</p>
-      </div>
-      ${nav('money')}`;
+      ${navbar({ title: '売上' })}
+      <main class="page">
+        ${largeTitle('売上')}
+        <div class="money"><small>${t.getMonth() + 1}月の入金</small><b>${yen(months[0].list.length * PRICE)}</b><small>${months[0].list.length}名</small></div>
+        ${group('月ごと', months.map(({ d, list }) => `<div class="cell"><span class="cell-main"><span class="t">${d.getFullYear()}年${d.getMonth() + 1}月</span>
+          ${list.length ? `<span class="s">${list.map((c) => esc(san(c.name))).join('、')}</span>` : ''}</span><span class="v${list.length ? ' strong' : ''}">${yen(list.length * PRICE)}</span></div>`).join(''),
+          `入金確認日をもとに、3ヶ月プラン（税込33万円）× 人数で計算しています。累計 ${total}名・${yen(total * PRICE)}。`)}
+      </main>
+      ${tabbar('money')}`;
   }
 
-  // ================================================================ メニュー
+  // ================================================================ 設定
 
   function renderMenu() {
     $app.innerHTML = `
-      ${topbar('メニュー', state.syncedAt ? `${state.syncedAt.getHours()}:${String(state.syncedAt.getMinutes()).padStart(2, '0')} に更新` : '')}
-      <div class="wrap">
-        <div class="menu">
-          <button type="button" data-act="refresh">🔄 最新の状態に更新</button>
-          <a href="#/new">＋ お客様を追加</a>
-          <button type="button" data-act="backup">💾 バックアップを保存（全データ）</button>
-          <button type="button" data-act="logout">🚪 ログアウト</button>
-        </div>
-        <div class="card">
-          <h3 class="ch">プラン</h3>
-          <dl class="tbl"><div><dt>内容</dt><dd>3ヶ月（12週）完全オンライン</dd></div><div><dt>料金</dt><dd>30万円（税込33万円）</dd></div>
-          <div><dt>支払い</dt><dd>銀行振込・入金確認後に開始</dd></div><div><dt>初回</dt><dd>カウンセリング60分</dd></div><div><dt>継続</dt><dd>個別相談</dd></div></dl>
-          <h3 class="ch">お客様との約束</h3>
-          <dl class="tbl"><div><dt>個別面談</dt><dd>週1回60分 × 12回</dd></div><div><dt>身体評価</dt><dd>開始時・4週・8週・12週</dd></div>
-          <div><dt>フォーム添削</dt><dd>動画 週2本まで</dd></div><div><dt>食事記録の確認</dt><dd>週3日分</dd></div>
-          <div><dt>週間レポート</dt><dd>週1回</dd></div><div><dt>LINE返信</dt><dd>原則2営業日以内（日曜・祝日なし）</dd></div></dl>
-        </div>
-      </div>
-      ${nav('menu')}`;
+      ${navbar({ title: '設定' })}
+      <main class="page">
+        ${largeTitle('設定', '', state.syncedAt ? `${state.syncedAt.getHours()}:${String(state.syncedAt.getMinutes()).padStart(2, '0')}に更新` : '')}
+        ${group('', `<button type="button" class="cell tint" data-act="refresh"><span class="cell-main"><span class="t">最新の状態に更新</span></span></button>
+          <button type="button" class="cell tint" data-act="backup"><span class="cell-main"><span class="t">バックアップを保存</span><span class="s">すべてのデータをファイルで保存します</span></span></button>`)}
+        ${group('プラン', kv('内容', '3ヶ月（12週）完全オンライン') + kv('料金', '30万円（税込33万円）') + kv('支払い', '銀行振込・入金確認後に開始') + kv('初回', 'カウンセリング60分') + kv('継続', '個別相談'))}
+        ${group('お客様との約束', kv('個別面談', '週1回60分×12回') + kv('身体評価', '開始時・4週・8週・12週') + kv('フォーム添削', '動画 週2本まで') + kv('食事記録の確認', '週3日分') + kv('週間レポート', '週1回') + kv('LINE返信', '原則2営業日以内'), '日曜・祝日はLINEの返信をしません。')}
+        ${group('', '<button type="button" class="cell danger center" data-act="logout"><span class="cell-main"><span class="t">ログアウト</span></span></button>')}
+      </main>
+      ${tabbar('menu')}`;
   }
 
-  // ================================================================ お客様の詳細（ficha completa）
+  // ================================================================ お客様の詳細
 
   function renderDetail(id) {
     const c = state.clients.find((x) => x.id === id);
-    if (!c) { $app.innerHTML = topbar('見つかりません', '', '#/') + '<div class="wrap"><div class="empty">画面を更新してください。</div></div>' + nav(''); return; }
+    if (!c) { location.hash = '#/'; return; }
     const s = sched(c);
     const iss = issues(c);
     const st = stats(c);
     const t = today();
     const w = s && s.cur >= 1 ? Math.min(s.cur, WEEKS) : null;
-    const lastCk = (() => { for (let i = WEEKS; i >= 1; i--) { const r = rec(c.id, i); if (r && r.checkinDone) return r.submittedAt ? dt(r.submittedAt) : `${i}週目`; } return '—'; })();
+    const r = w ? rec(c.id, w) || {} : {};
     const nc = nextCheckin(c, s);
-    const dueCk = w && dowInWeek(s, w, c.checkinDow);
-    const ckLate = w && !(rec(c.id, w) || {}).checkinDone && dueCk && dueCk < t;
-    const banner = bannerText(iss);
-    const statusBox = banner ? `<div class="banner big">🚨 ${esc(banner)}</div>`
-      : c.status === ST.ACTIVE ? '<div class="status ok"><small>STATUS</small>✅ 順調</div>'
-        : `<div class="status"><small>STATUS</small>${esc(c.status)}</div>`;
-    const tr = (k, v, cls) => `<div><dt>${k}</dt><dd class="${cls || ''}">${v}</dd></div>`;
+    const late = lateText(iss);
     const dowName = (d) => (d === '' || d == null ? '未設定' : DOW[d] + '曜');
+    const slash = (d) => (d ? d.replace(/-/g, '/') : '');
     const m = c.formKey ? mainMessage(c) : null;
     const intake = c.intake && c.intake.submittedAt;
+    const tasks = taskCells(c);
 
     $app.innerHTML = `
-      ${topbar(san(c.name), '', '#/')}
-      <div class="wrap">
-        ${statusBox}
-        <dl class="tbl card">
-          ${tr('プラン', '<span class="blue">3ヶ月（12週）</span>')}
-          ${tr('進み具合', s && s.cur >= 1 ? `${Math.min(s.cur, WEEKS)}週目 / 12週` : '開始前')}
-          ${tr('💰 入金確認日', c.paidDate ? `<span class="green">${c.paidDate.replace(/-/g, '/')}</span>` : '<span class="bad">未確認</span>')}
-          ${tr('開始日', c.startDate ? c.startDate.replace(/-/g, '/') : '<span class="bad">未設定</span>')}
-          ${tr('終了予定日', s ? fd(s.end).replace(/-/g, '/') : '—')}
-          ${tr('📋 次のチェックイン', ckLate ? `<span class="bad">${fd(dueCk).replace(/-/g, '/')}（遅れ）</span>` : nc ? fd(nc).replace(/-/g, '/') + `（${DOW[nc.getDay()]}）` : '—')}
-          ${tr('最終チェックイン', lastCk)}
-          ${tr('チェックイン曜日', dowName(c.checkinDow))}
-          ${tr('面談曜日', dowName(c.meetingDow))}
-          ${tr('LINE名', esc(c.lineName || '—'))}
-          ${c.goal ? tr('目標', esc(c.goal)) : ''}
-          ${c.memo ? tr('メモ', esc(c.memo)) : ''}
-        </dl>
+      ${navbar({ title: san(c.name), back: '#/', backLabel: 'ホーム', right: `<a class="nav-btn" href="#/edit/${encodeURIComponent(id)}">編集</a>` })}
+      <main class="page">
+        ${largeTitle(san(c.name), '', subLine(c))}
+        ${late ? `<div class="notice"><span class="ic">${I.warn}</span><div><b>遅れています</b><span>${esc(late)}</span></div></div>`
+          : c.status === ST.ACTIVE && s && s.cur >= 1 ? `<div class="notice ok"><span class="ic">${I.ok}</span><div><b>順調です</b></div></div>` : ''}
 
-        ${weekTasks(c).length ? `<h2 class="sh">${w ? `${w}週目のタスク` : 'タスク'}</h2>${taskButtons(c)}` : ''}
-        ${w ? `<div class="steps">
-          ${stepRow('🎥 フォーム添削', 'formVideos', (rec(c.id, w) || {}).formVideos || 0, FORM_MAX, '本', w, c.id)}
-          ${stepRow('🍱 食事記録の確認', 'mealDays', (rec(c.id, w) || {}).mealDays || 0, 7, '日', w, c.id)}
-        </div>` : ''}
+        ${tasks ? group(w ? `${w}週目のタスク` : 'タスク', tasks) : ''}
+        ${w ? group('今週の記録', `
+          <div class="cell"><span class="cell-main"><span class="t">フォーム添削</span><span class="s">上限 ${FORM_MAX}本</span></span>
+            <span class="val">${r.formVideos || 0}本</span>${stepper(c.id, w, 'formVideos', FORM_MAX)}</div>
+          <div class="cell"><span class="cell-main"><span class="t">食事記録の確認</span><span class="s">目安 ${MEAL_TARGET}日</span></span>
+            <span class="val">${r.mealDays || 0}日</span>${stepper(c.id, w, 'mealDays', 7)}</div>`) : ''}
 
-        ${c.formKey ? `<a class="linkrow" href="${formUrl(c)}" target="_blank" rel="noopener noreferrer"><span>🔗</span><span class="u">${esc(formUrl(c).replace(/^https?:\/\//, ''))}</span><span>›</span></a>`
-          : '<button class="btn block" type="button" data-act="issuekey">🔗 お客様用リンクを作る</button>'}
-        ${m ? `<a class="btn line block" href="${lineHref(m.text)}" target="_blank" rel="noopener noreferrer">💬 ${m.label}</a>` : ''}
-        ${c.formKey && intake && c.status === ST.ACTIVE ? `<a class="btn block" href="${lineHref(msgIntake(c))}" target="_blank" rel="noopener noreferrer">📋 ヒアリングをもう一度送る（LINE）</a>` : ''}
-        ${c.status === ST.ACTIVE && s && s.cur >= 11 ? `<button class="btn camel block" type="button" data-act="status" data-v="${ST.CONSULT}">継続の相談に進む</button>` : ''}
-        ${c.status === ST.ACTIVE ? `<button class="btn outline block" type="button" data-act="status" data-v="${ST.DONE}">終了にする</button>` : ''}
-        ${c.status === ST.DONE || c.status === ST.CONSULT ? `<button class="btn outline block" type="button" data-act="status" data-v="${ST.ACTIVE}">進行中に戻す</button>` : ''}
+        <section class="group"><h2 class="gh">お客様に送る</h2>
+          ${c.formKey ? `<div class="list"><a class="cell" href="${formUrl(c)}" target="_blank" rel="noopener noreferrer"><span class="cell-main"><span class="t tint-t" style="color:var(--tint)">お客様用ページを開く</span><span class="s">${esc(formUrl(c).replace(/^https?:\/\//, ''))}</span></span>${chev}</a>
+            ${intake && c.status === ST.ACTIVE ? `<a class="cell" href="${lineHref(msgIntake(c))}" target="_blank" rel="noopener noreferrer"><span class="cell-main"><span class="t" style="color:var(--tint)">ヒアリングをもう一度送る</span></span>${chev}</a>` : ''}</div>
+            <div class="btns"><a class="btn line" href="${lineHref(m.text)}" target="_blank" rel="noopener noreferrer">${I.msg}${m.label}</a></div>`
+            : `<div class="list"><button class="cell tint" type="button" data-act="issuekey"><span class="cell-main"><span class="t">お客様用リンクを作る</span></span></button></div>`}
+        </section>
 
-        <h2 class="sh">事前ヒアリング</h2>
-        ${intakeBlock(c)}
+        ${group('情報', [
+          kv('進み具合', s && s.cur >= 1 ? `${Math.min(s.cur, WEEKS)}週目／12週` : '開始前', 'strong'),
+          kv('入金確認日', c.paidDate ? slash(c.paidDate) : '未確認', c.paidDate ? '' : 'late-t'),
+          kv('開始日', c.startDate ? slash(c.startDate) : '未設定', c.startDate ? '' : 'late-t'),
+          kv('終了予定日', s ? slash(fd(s.end)) : '—'),
+          kv('次のチェックイン', nc ? `${slash(fd(nc))}（${DOW[nc.getDay()]}）` : '—'),
+          kv('チェックイン曜日', dowName(c.checkinDow)),
+          kv('面談曜日', dowName(c.meetingDow)),
+          kv('LINE名', esc(c.lineName || '—')),
+          c.goal ? kv('目標', esc(c.goal)) : '',
+          c.memo ? kv('メモ', esc(c.memo)) : '',
+        ].join(''), `約束の達成：面談 ${st.meet}/12・身体評価 ${st.evals}/4・レポート ${st.rep}/12・チェックイン ${st.chk}/12`)}
 
-        <h2 class="sh">身体評価</h2>
-        <div class="card">${EVALS.map((ev) => {
+        ${group('事前ヒアリング', intakeCell(c))}
+
+        ${group('身体評価', EVALS.map((ev) => {
           const due = s ? evalDue(c, s, ev) : null;
           const miss = !c[ev.key] && due && due < t;
-          return `<div class="eval${miss ? ' miss' : ''}"><span>${ev.label}<small>予定 ${mdw(due)}</small></span>
+          return `<div class="cell"><span class="cell-main"><span class="t">${ev.label}</span><span class="s${miss ? ' late-t' : ''}">予定 ${mdw(due)}${miss ? '・遅れ' : ''}</span></span>
             <input type="date" value="${esc(c[ev.key] || '')}" data-act="evaldate" data-key="${ev.key}" aria-label="${ev.label}の実施日"></div>`;
-        }).join('')}
-        <p class="mini">約束の達成：面談 ${st.meet}/12・評価 ${st.evals}/4・レポート ${st.rep}/12・チェックイン ${st.chk}/12</p></div>
-        ${s && (s.cur >= 11 || c.finalDone || c.finalPlan) ? finalCard(c, s) : ''}
+        }).join(''), '実施した日を入れてください。')}
+        ${s && (s.cur >= 11 || c.finalDone || c.finalPlan) ? finalGroup(c, s) : ''}
 
-        <h2 class="sh">チェックインの履歴</h2>
-        ${historyBlock(c, s)}
+        ${historyGroup(c, s)}
 
-        <a class="btn block" href="#/edit/${encodeURIComponent(c.id)}">情報を編集</a>
-        <button class="btn danger block" type="button" data-act="delete" data-id="${esc(c.id)}">このお客様を削除</button>
-      </div>
-      ${nav('')}`;
+        ${c.status === ST.ACTIVE || c.status === ST.DONE || c.status === ST.CONSULT ? group('状態', [
+          c.status === ST.ACTIVE && s && s.cur >= 11 ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.CONSULT}"><span class="cell-main"><span class="t">継続の相談に進む</span></span></button>` : '',
+          c.status === ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.DONE}"><span class="cell-main"><span class="t">終了にする</span></span></button>` : '',
+          c.status !== ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.ACTIVE}"><span class="cell-main"><span class="t">進行中に戻す</span></span></button>` : '',
+        ].join('')) : ''}
+        ${group('', `<button type="button" class="cell danger center" data-act="delete" data-id="${esc(c.id)}"><span class="cell-main"><span class="t">このお客様を削除</span></span></button>`)}
+      </main>
+      ${tabbar('')}`;
     drawChart(c);
   }
 
-  function stepRow(label, name, v, max, unit, w, cid) {
-    return `<div class="step"><span>${label}<small>今週 上限/目安 ${name === 'formVideos' ? FORM_MAX + '本' : MEAL_TARGET + '日'}</small></span>
-      <span class="stepper"><button type="button" data-act="step" data-id="${esc(cid)}" data-name="${name}" data-d="-1" data-max="${max}" data-w="${w}" aria-label="減らす">−</button>
-      <output>${v}<small>${unit}</small></output>
-      <button type="button" data-act="step" data-id="${esc(cid)}" data-name="${name}" data-d="1" data-max="${max}" data-w="${w}" aria-label="増やす">＋</button></span></div>`;
+  function stepper(cid, w, name, max) {
+    return `<span class="stepper"><button type="button" data-act="step" data-id="${esc(cid)}" data-name="${name}" data-d="-1" data-max="${max}" data-w="${w}" aria-label="減らす">−</button><i></i>
+      <button type="button" data-act="step" data-id="${esc(cid)}" data-name="${name}" data-d="1" data-max="${max}" data-w="${w}" aria-label="増やす">＋</button></span>`;
   }
 
-  function intakeBlock(c) {
-    if (!(c.intake && c.intake.submittedAt)) return '<p class="muted pad">まだ回答がありません。</p>';
+  function intakeCell(c) {
+    if (!(c.intake && c.intake.submittedAt)) return '<div class="cell"><span class="cell-main"><span class="t" style="color:var(--label2)">まだ回答がありません</span></span></div>';
     const a = c.intake.answers || {};
     const qs = INTAKE.sections.flatMap((sec) => sec.questions);
     const val = (q) => (q.type === 'radio' ? a[q.id + '__label'] || a[q.id] : a[q.id] ? a[q.id] + (q.unit ? ' ' + q.unit : '') : '') || '—';
     const known = new Set(qs.map((q) => q.id));
     const extra = Object.keys(a).filter((k) => !known.has(k) && !k.endsWith('__label'));
-    return `<details class="card qa"><summary>${dt(c.intake.submittedAt)} に回答 ・ タップで開く</summary>
-      <dl class="qa-l">${qs.map((q) => `<dt>${esc(q.label)}</dt><dd>${esc(val(q))}</dd>`).join('')}
-      ${extra.map((k) => `<dt>${esc(k)}</dt><dd>${esc(a[k + '__label'] || a[k])}</dd>`).join('')}</dl></details>`;
+    return `<details class="cell"><summary><span class="cell-main"><span class="t">回答を見る</span><span class="s">${dt(c.intake.submittedAt)}に回答</span></span>${chev}</summary>
+      <dl class="qa">${qs.map((q) => `<dt>${esc(q.label)}</dt><dd>${esc(val(q))}</dd>`).join('')}${extra.map((k) => `<dt>${esc(k)}</dt><dd>${esc(a[k + '__label'] || a[k])}</dd>`).join('')}</dl></details>`;
   }
 
-  function historyBlock(c, s) {
-    const cards = [];
+  function historyGroup(c, s) {
+    const cells = [];
     for (let w = WEEKS; w >= 1; w--) {
       const r = rec(c.id, w);
       const has = r && (r.weights.length || r.checks || r.checkinDone || r.memo || r.meetingDate || r.submittedAt);
       if (!has && !(s && w === Math.min(s.cur, WEEKS))) continue;
       const rr = r || {};
       const n = scoreOf(rr);
-      const dots = rr.checks && rr.checks.length === 7 ? rr.checks.split('').map((x) => (x === '1' ? '●' : '○')).join('') : '';
-      cards.push(`<div class="hcard">
-        <div class="h-top"><b>${w}週目</b><span class="muted">${s ? `${md(weekStart(s, w))}〜${md(weekEnd(s, w))}` : ''}</span>
-          <span class="h-kg">${avgW(rr) == null ? '—' : avgW(rr).toFixed(1) + ' kg'}</span>
-          <a class="mini-btn" href="#/c/${encodeURIComponent(c.id)}/w/${w}">✏️ 記録</a></div>
-        <div class="h-rates">
-          ${dots ? `<span>チェックシート <i>${dots}</i> ${n}/7</span>` : ''}
-          ${rr.condition ? `<span>体調 <i>${esc(rr.condition)}</i></span>` : ''}
-          <span>面談 <i>${rr.meetingDate ? '✓' : '—'}</i></span><span>レポート <i>${rr.reportSent ? '✓' : '—'}</i></span>
-        </div>
-        ${rr.clientWin ? `<p>👍 ${esc(rr.clientWin)}</p>` : ''}
-        ${rr.clientNote ? `<p>💭 ${esc(rr.clientNote)}</p>` : ''}
-        ${rr.memo ? `<p class="muted">📝 ${esc(rr.memo)}</p>` : ''}
-      </div>`);
+      const meta = [n == null ? '' : `チェックシート ${n}/7（${scoreLabel(n)}）`, rr.condition ? `体調 ${rr.condition}` : '', rr.meetingDate ? '面談✓' : '', rr.reportSent ? 'レポート✓' : ''].filter(Boolean).join('・');
+      cells.push(`<a class="cell" href="#/c/${encodeURIComponent(c.id)}/w/${w}">
+        <span class="cell-main"><span class="t b">${w}週目 <span style="font-weight:400;color:var(--label2);font-size:.88rem">${s ? `${md(weekStart(s, w))}〜${md(weekEnd(s, w))}` : ''}</span></span>
+          ${meta ? `<span class="s">${esc(meta)}</span>` : '<span class="s">まだ記録がありません</span>'}
+          ${rr.clientNote ? `<span class="quote">「${esc(rr.clientNote)}」</span>` : ''}${rr.clientWin ? `<span class="quote">👍 ${esc(rr.clientWin)}</span>` : ''}</span>
+        <span class="wk-kg">${avgW(rr) == null ? '' : avgW(rr).toFixed(1) + ' kg'}</span>${chev}</a>`);
     }
     const hasW = Object.values(state.weeks[c.id] || {}).some((r) => avgW(r) != null);
-    return `${hasW ? `<div class="card chart-card"><div class="ch-row"><h3 class="ch">📊 体重の推移</h3><span id="chg" class="muted"></span></div>
-      <div class="chart-box"><canvas id="chart" aria-label="週平均体重の推移"></canvas></div><p id="chartMsg" class="mini"></p></div>` : ''}
-      ${cards.join('') || '<p class="muted pad">まだ記録がありません。</p>'}`;
+    return group('チェックインの履歴', `${hasW ? `<div class="cell chart-cell"><div class="row"><b>体重の推移</b><span id="chg" class="s" style="color:var(--label2)"></span></div>
+        <div class="chart-box"><canvas id="chart" aria-label="週平均体重の推移"></canvas></div><p id="chartMsg" class="gf" style="padding:6px 0 0"></p></div>` : ''}
+      ${cells.join('') || '<div class="cell"><span class="cell-main"><span class="t" style="color:var(--label2)">まだ記録がありません</span></span></div>'}`, '週をタップすると記録を入力・修正できます。');
   }
 
-  function finalCard(c, s) {
+  function finalGroup(c, s) {
     const recs = [];
     for (let w = 1; w <= WEEKS; w++) recs.push(rec(c.id, w));
     const withW = recs.map((r, i) => ({ w: i + 1, v: avgW(r) })).filter((x) => x.v != null);
     const first = withW[0];
     const lastW = withW[withW.length - 1];
     const diff = first && lastW && lastW.w !== first.w ? lastW.v - first.v : null;
-    return `<form id="finalForm" class="card">
-      <h3 class="ch">🏁 最終評価（〜${mdw(s.end)}）</h3>
-      <p class="mini">体重 ${first ? kg(first.v) : '—'} → ${lastW ? kg(lastW.v) : '—'}${diff == null ? '' : `（${diff > 0 ? '+' : ''}${diff.toFixed(1)}kg）`}</p>
-      <div class="field"><label for="finalPlan">12週の変化と今後の計画（継続の相談も）</label><textarea id="finalPlan" name="finalPlan" rows="4">${esc(c.finalPlan || '')}</textarea></div>
-      <div class="field"><label for="finalDone">実施日</label><input type="date" id="finalDone" name="finalDone" value="${esc(c.finalDone || '')}"></div>
-      <button class="btn primary block" type="submit">保存</button>
-    </form>`;
+    return `<form id="finalForm">${group(`最終評価（〜${mdw(s.end)}）`, `
+      ${kv('体重の変化', `${first ? kg(first.v) : '—'} → ${lastW ? kg(lastW.v) : '—'}${diff == null ? '' : `（${diff > 0 ? '+' : ''}${diff.toFixed(1)}kg）`}`)}
+      <div class="cell"><textarea name="finalPlan" rows="4" placeholder="12週の変化と今後の計画（継続の相談も）" aria-label="12週の変化と今後の計画">${esc(c.finalPlan || '')}</textarea></div>
+      <label class="cell"><span class="cell-main"><span class="t">実施日</span></span><input type="date" name="finalDone" value="${esc(c.finalDone || '')}"></label>
+      <button class="cell tint center" type="submit"><span class="cell-main"><span class="t">保存</span></span></button>`)}</form>`;
   }
 
   async function loadChartJs() {
@@ -934,7 +895,6 @@
     });
     return window.Chart;
   }
-
   async function drawChart(c) {
     const cv = document.getElementById('chart');
     if (!cv) return;
@@ -943,7 +903,7 @@
     const chg = document.getElementById('chg');
     if (pts.length >= 2 && chg) { const d = pts[pts.length - 1].v - pts[0].v; chg.textContent = `${d > 0 ? '+' : ''}${d.toFixed(1)} kg`; }
     const msg = document.getElementById('chartMsg');
-    if (msg) msg.textContent = `${pts.length}週分・${pts[0].w}週目 → ${pts[pts.length - 1].w}週目`;
+    if (msg) msg.textContent = `${pts.length}週分（${pts[0].w}週目 → ${pts[pts.length - 1].w}週目）`;
     let Chart;
     try { Chart = await loadChartJs(); } catch (_) { if (msg) msg.textContent = 'グラフを読み込めませんでした。'; return; }
     if (!cv.isConnected) return;
@@ -952,20 +912,14 @@
     if (chart) chart.destroy();
     chart = new Chart(cv, {
       type: 'line',
-      data: { labels: pts.map((p) => p.w + '週'), datasets: [{ data: pts.map((p) => p.v), borderColor: v('--camel'), backgroundColor: 'rgba(217,165,106,.12)',
-        fill: true, tension: 0.25, pointRadius: 4, pointBackgroundColor: v('--card'), pointBorderWidth: 2.5, borderWidth: 2.5 }] },
-      options: {
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: v('--muted'), font: { size: 11 } }, grid: { display: false } },
-          y: { ticks: { color: v('--muted'), font: { size: 11 } }, grid: { color: 'rgba(255,255,255,.06)' } },
-        },
-      },
+      data: { labels: pts.map((p) => p.w + '週'), datasets: [{ data: pts.map((p) => p.v), borderColor: v('--tint'), backgroundColor: 'rgba(0,122,255,.10)', fill: true,
+        tension: 0.3, pointRadius: 3.5, pointBackgroundColor: v('--bg2'), pointBorderWidth: 2, borderWidth: 2.5 }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: { ticks: { color: v('--label2'), font: { size: 11 } }, grid: { display: false } }, y: { ticks: { color: v('--label2'), font: { size: 11 } }, grid: { color: v('--sep') } } } },
     });
   }
 
-  // ================================================================ 週の記録（編集）
+  // ================================================================ 週の記録
 
   function renderWeekEdit(id, w) {
     const c = state.clients.find((x) => x.id === id);
@@ -976,32 +930,31 @@
     while (weights.length < 3) weights.push('');
     const checks = (r.checks || '').padEnd(7, '0');
     $app.innerHTML = `
-      ${topbar(`${w}週目の記録`, `${san(c.name)}${s ? `・${md(weekStart(s, w))}〜${md(weekEnd(s, w))}` : ''}`, '#/c/' + encodeURIComponent(id))}
-      <div class="wrap">
-        ${r.submittedAt ? `<div class="card sub"><h3 class="ch">📩 お客様から届いた（${esc(dt(r.submittedAt))}）</h3>
-          ${r.condition ? `<p>体調：${esc(r.condition)}</p>` : ''}${r.clientWin ? `<p>👍 ${esc(r.clientWin)}</p>` : ''}${r.clientNote ? `<p>💭 ${esc(r.clientNote)}</p>` : ''}
-          <p class="mini">体重とチェックシートは下に反映済みです。</p></div>` : ''}
-        <form id="weekForm" class="card" novalidate>
-          <div class="field"><span class="lbl">体重（kg）</span>
-            <div class="weights" id="weights">${weights.map((v) => `<input type="number" inputmode="decimal" step="0.1" min="20" max="400" value="${esc(v)}" aria-label="体重">`).join('')}</div>
-            <div class="row-sb"><span class="avg">週平均 <b id="avg">—</b></span><button class="mini-btn" type="button" data-act="addweight">＋ 入力欄</button></div></div>
-          <div class="field"><span class="lbl">チェックシート</span>
-            <div class="checklist">${CHECK_ITEMS.map((txt, i) => `<label class="check"><input type="checkbox" name="ck${i}"${checks[i] === '1' ? ' checked' : ''}><span>${esc(txt)}</span></label>`).join('')}</div>
-            <div class="score" id="score"></div></div>
-          <div class="grid2">
-            <label class="toggle"><input type="checkbox" name="checkinDone"${r.checkinDone ? ' checked' : ''}><span>チェックイン受取</span></label>
-            <label class="toggle"><input type="checkbox" name="reportSent"${r.reportSent ? ' checked' : ''}><span>レポート送付</span></label>
-          </div>
-          <div class="grid2">
-            <div class="field"><label for="meetingDate">面談実施日</label><input type="date" id="meetingDate" name="meetingDate" value="${esc(r.meetingDate || '')}"></div>
-            <div class="field"><label for="formVideos">フォーム添削（本）</label><input type="number" id="formVideos" name="formVideos" min="0" max="${FORM_MAX}" value="${r.formVideos || 0}"></div>
-          </div>
-          <div class="field"><label for="mealDays">食事記録の確認（日）</label><input type="number" id="mealDays" name="mealDays" min="0" max="7" value="${r.mealDays || 0}"></div>
-          <div class="field"><label for="wmemo">メモ</label><textarea id="wmemo" name="memo" rows="3">${esc(r.memo || '')}</textarea></div>
-          <button class="btn primary block" type="submit">保存</button>
+      ${navbar({ title: `${w}週目`, back: '#/c/' + encodeURIComponent(id), backLabel: san(c.name).slice(0, 8), solid: true })}
+      <main class="page">
+        ${largeTitle(`${w}週目の記録`, '', s ? `${md(weekStart(s, w))}〜${md(weekEnd(s, w))}` : '')}
+        ${r.submittedAt ? group(`お客様から届いた（${esc(dt(r.submittedAt))}）`, [
+          r.condition ? kv('体調', esc(r.condition)) : '',
+          r.clientWin ? `<div class="cell"><span class="cell-main"><span class="s">うまくいったこと</span><span class="t">${esc(r.clientWin)}</span></span></div>` : '',
+          r.clientNote ? `<div class="cell"><span class="cell-main"><span class="s">困っていること・質問</span><span class="t">${esc(r.clientNote)}</span></span></div>` : '',
+        ].join('') || kv('内容', '体重とチェックシート'), '体重とチェックシートは下に反映済みです。') : ''}
+        <form id="weekForm" novalidate>
+          ${group('体重（kg）', `<div class="cell"><div class="weights" id="weights">${weights.map((v) => `<input type="number" inputmode="decimal" step="0.1" min="20" max="400" value="${esc(v)}" aria-label="体重">`).join('')}</div></div>
+            <div class="cell"><span class="cell-main"><span class="t">週平均</span></span><span class="v strong" id="avg">—</span></div>
+            <button type="button" class="cell tint" data-act="addweight"><span class="cell-main"><span class="t">入力欄を追加</span></span></button>`)}
+          ${group('チェックシート', CHECK_ITEMS.map((txt, i) => `<label class="cell"><span class="cell-main"><span class="t">${esc(txt)}</span></span><input type="checkbox" class="tick" name="ck${i}"${checks[i] === '1' ? ' checked' : ''}></label>`).join('')
+            + '<div class="cell score-row"><span class="cell-main"><span class="t" id="score">未入力</span></span></div>', '5個以上「継続」、3〜4個「1つだけ改善」、0〜2個「計画をシンプルに」')}
+          ${group('この週のこと', `
+            <label class="cell"><span class="cell-main"><span class="t">チェックインを受け取った</span></span><input type="checkbox" class="switch" name="checkinDone"${r.checkinDone ? ' checked' : ''}></label>
+            <label class="cell"><span class="cell-main"><span class="t">週間レポートを送った</span></span><input type="checkbox" class="switch" name="reportSent"${r.reportSent ? ' checked' : ''}></label>
+            <label class="cell"><span class="cell-main"><span class="t">面談の実施日</span></span><input type="date" name="meetingDate" value="${esc(r.meetingDate || '')}"></label>
+            <label class="cell"><span class="lab">フォーム添削（本）</span><input type="number" name="formVideos" min="0" max="${FORM_MAX}" inputmode="numeric" value="${r.formVideos || 0}"></label>
+            <label class="cell"><span class="lab">食事記録の確認（日）</span><input type="number" name="mealDays" min="0" max="7" inputmode="numeric" value="${r.mealDays || 0}"></label>`)}
+          ${group('メモ', `<div class="cell"><textarea name="memo" rows="3" placeholder="メモ" aria-label="メモ">${esc(r.memo || '')}</textarea></div>`)}
+          <div class="btns"><button class="btn filled" type="submit">保存</button></div>
         </form>
-      </div>
-      ${nav('')}`;
+      </main>
+      ${tabbar('')}`;
     bindWeekForm(c, w);
   }
 
@@ -1015,11 +968,12 @@
       document.getElementById('avg').textContent = ws.length ? kg(ws.reduce((a, b) => a + b, 0) / ws.length) + `（${ws.length}回）` : '—';
       const n = CHECK_ITEMS.filter((_, i) => f['ck' + i].checked).length;
       const sc = document.getElementById('score');
-      if (!checksTouched) { sc.className = 'score'; sc.innerHTML = '<span class="muted">未入力</span>'; return; }
-      sc.className = 'score lv' + scoreLv(n);
-      sc.innerHTML = `<span>スコア <b>${n}/7</b></span><b>${scoreLabel(n)}</b>`;
+      if (!checksTouched) { sc.className = 't'; sc.textContent = '未入力'; return; }
+      sc.className = 't lv' + scoreLv(n);
+      sc.textContent = `${n}/7　${scoreLabel(n)}`;
     };
     f.addEventListener('input', (e) => { state.dirty = true; if (/^ck\d$/.test(e.target.name)) checksTouched = true; update(); });
+    f.addEventListener('change', (e) => { if (/^ck\d$/.test(e.target.name)) { checksTouched = true; update(); } });
     update();
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1042,24 +996,25 @@
 
   function renderNew() {
     $app.innerHTML = `
-      ${topbar('お客様を追加', '3つ入れるだけ。追加すると送るリンクができます', '#/')}
-      <div class="wrap">
-        <form id="newForm" class="card" novalidate>
-          <div class="field"><label for="n-name">名前</label><input type="text" id="n-name" name="name" autocomplete="off" placeholder="例：田中 太郎"></div>
-          <div class="field"><label for="n-line">LINE名</label><input type="text" id="n-line" name="lineName" autocomplete="off"></div>
-          <div class="field"><label for="n-paid">入金確認日<small>まだなら空欄でOK</small></label><input type="date" id="n-paid" name="paidDate"></div>
-          <div id="editErr"></div>
-          <button class="btn primary block" type="submit">追加してリンクを作る</button>
+      ${navbar({ title: 'お客様を追加', back: '#/', backLabel: 'キャンセル', solid: true })}
+      <main class="page">
+        ${largeTitle('お客様を追加')}
+        <form id="newForm" novalidate>
+          ${group('', `<label class="cell"><span class="lab">名前</span><input type="text" name="name" autocomplete="off" placeholder="田中 太郎"></label>
+            <label class="cell"><span class="lab">LINE名</span><input type="text" name="lineName" autocomplete="off" placeholder="必須"></label>
+            <label class="cell"><span class="cell-main"><span class="t">入金確認日</span><span class="s">まだなら空欄でOK</span></span><input type="date" name="paidDate"></label>`,
+            '追加すると、お客様に送る事前ヒアリングのリンクと案内文ができます。開始日などは入金確認後に「編集」で入れます。')}
+          <p class="err" id="editErr"></p>
+          <div class="btns"><button class="btn filled" type="submit">追加</button></div>
         </form>
-      </div>
-      ${nav('')}`;
+      </main>`;
     const f = document.getElementById('newForm');
     f.addEventListener('input', () => { state.dirty = true; });
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const err = document.getElementById('editErr');
       const name = f.name.value.trim(), lineName = f.lineName.value.trim();
-      if (!name || !lineName) { err.innerHTML = '<div class="err">名前とLINE名を入力してください。</div>'; (name ? f.lineName : f.name).focus(); return; }
+      if (!name || !lineName) { err.textContent = '名前とLINE名を入力してください。'; (name ? f.lineName : f.name).focus(); return; }
       const btn = f.querySelector('[type="submit"]');
       btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
       try {
@@ -1068,10 +1023,7 @@
         saveCache();
         toast('追加しました。リンクをLINEで送ってください');
         location.hash = '#/c/' + encodeURIComponent(d.client.id);
-      } catch (ex) {
-        err.innerHTML = `<div class="err">${esc(errText(ex))}</div>`;
-        btn.disabled = false; btn.textContent = '追加してリンクを作る';
-      }
+      } catch (ex) { err.textContent = errText(ex); btn.disabled = false; btn.textContent = '追加'; }
     });
     setTimeout(() => f.name.focus(), 50);
   }
@@ -1079,31 +1031,25 @@
   function renderEdit(id) {
     const c = state.clients.find((x) => x.id === id);
     if (!c) { location.hash = '#/'; return; }
-    const dowOpts = (sel) => '<option value="">未設定</option>' +
-      DOW.map((d, i) => `<option value="${i}"${String(sel) === String(i) ? ' selected' : ''}>${d}曜</option>`).join('');
+    const dowOpts = (sel) => '<option value="">未設定</option>' + DOW.map((d, i) => `<option value="${i}"${String(sel) === String(i) ? ' selected' : ''}>${d}曜</option>`).join('');
     $app.innerHTML = `
-      ${topbar('情報を編集', san(c.name), '#/c/' + encodeURIComponent(id))}
-      <div class="wrap">
-        <form id="editForm" class="card" novalidate>
-          <div class="field"><label for="f-name">名前</label><input type="text" id="f-name" name="name" value="${esc(c.name)}" autocomplete="off"></div>
-          <div class="field"><label for="f-line">LINE名</label><input type="text" id="f-line" name="lineName" value="${esc(c.lineName)}" autocomplete="off"></div>
-          <div class="grid2">
-            <div class="field"><label for="f-paid">入金確認日</label><input type="date" id="f-paid" name="paidDate" value="${esc(c.paidDate)}"></div>
-            <div class="field"><label for="f-start">開始日</label><input type="date" id="f-start" name="startDate" value="${esc(c.startDate)}"></div>
-          </div>
-          <p class="mini" id="endHint"></p>
-          <div class="grid2">
-            <div class="field"><label for="f-ci">チェックイン曜日</label><select id="f-ci" name="checkinDow">${dowOpts(c.checkinDow)}</select></div>
-            <div class="field"><label for="f-mt">面談曜日</label><select id="f-mt" name="meetingDow">${dowOpts(c.meetingDow)}</select></div>
-          </div>
-          <div class="field"><label for="f-st">状態</label><select id="f-st" name="status">${STATUSES.map((s) => `<option${s === c.status ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
-          <div class="field"><label for="f-goal">目標</label><textarea id="f-goal" name="goal" rows="2">${esc(c.goal)}</textarea></div>
-          <div class="field"><label for="f-memo">メモ</label><textarea id="f-memo" name="memo" rows="3">${esc(c.memo)}</textarea></div>
-          <div id="editErr"></div>
-          <button class="btn primary block" type="submit">保存</button>
+      ${navbar({ title: '編集', back: '#/c/' + encodeURIComponent(id), backLabel: 'キャンセル', solid: true })}
+      <main class="page">
+        ${largeTitle('編集', '', san(c.name))}
+        <form id="editForm" novalidate>
+          ${group('', `<label class="cell"><span class="lab">名前</span><input type="text" name="name" value="${esc(c.name)}" autocomplete="off"></label>
+            <label class="cell"><span class="lab">LINE名</span><input type="text" name="lineName" value="${esc(c.lineName)}" autocomplete="off"></label>`)}
+          ${group('日程', `<label class="cell"><span class="cell-main"><span class="t">入金確認日</span></span><input type="date" name="paidDate" value="${esc(c.paidDate)}"></label>
+            <label class="cell"><span class="cell-main"><span class="t">開始日</span></span><input type="date" name="startDate" value="${esc(c.startDate)}"></label>
+            <label class="cell"><span class="lab">チェックイン曜日</span><select name="checkinDow">${dowOpts(c.checkinDow)}</select></label>
+            <label class="cell"><span class="lab">面談曜日</span><select name="meetingDow">${dowOpts(c.meetingDow)}</select></label>`, '<span id="endHint"></span>')}
+          ${group('', `<label class="cell"><span class="lab">状態</span><select name="status">${STATUSES.map((s) => `<option${s === c.status ? ' selected' : ''}>${s}</option>`).join('')}</select></label>`)}
+          ${group('目標', `<div class="cell"><textarea name="goal" rows="2" placeholder="目標" aria-label="目標">${esc(c.goal)}</textarea></div>`)}
+          ${group('メモ', `<div class="cell"><textarea name="memo" rows="3" placeholder="メモ" aria-label="メモ">${esc(c.memo)}</textarea></div>`)}
+          <p class="err" id="editErr"></p>
+          <div class="btns"><button class="btn filled" type="submit">保存</button></div>
         </form>
-      </div>
-      ${nav('')}`;
+      </main>`;
     const f = document.getElementById('editForm');
     const endHint = () => {
       const st = pd(f.startDate.value);
@@ -1119,8 +1065,8 @@
       e.preventDefault();
       const err = document.getElementById('editErr');
       const name = f.name.value.trim();
-      if (!name) { err.innerHTML = '<div class="err">名前を入力してください。</div>'; return; }
-      if (f.status.value === ST.ACTIVE && !f.startDate.value) { err.innerHTML = '<div class="err">「進行中」にするには開始日が必要です。</div>'; return; }
+      if (!name) { err.textContent = '名前を入力してください。'; return; }
+      if (f.status.value === ST.ACTIVE && !f.startDate.value) { err.textContent = '「進行中」にするには開始日が必要です。'; return; }
       const data = { id: c.id, name, lineName: f.lineName.value.trim(), paidDate: f.paidDate.value, startDate: f.startDate.value,
         checkinDow: f.checkinDow.value, meetingDow: f.meetingDow.value, goal: f.goal.value, status: f.status.value, memo: f.memo.value };
       const btn = f.querySelector('[type="submit"]');
@@ -1132,7 +1078,7 @@
         saveCache();
         toast('保存しました');
         location.hash = '#/c/' + encodeURIComponent(d.client.id);
-      } catch (ex) { err.innerHTML = `<div class="err">${esc(errText(ex))}</div>`; btn.disabled = false; btn.textContent = '保存'; }
+      } catch (ex) { err.textContent = errText(ex); btn.disabled = false; btn.textContent = '保存'; }
     });
   }
 
@@ -1149,28 +1095,27 @@
 
     if (act === 'sheet') { ui.sheet = el.dataset.id; return keepScroll(render); }
     if (act === 'close-sheet') { ui.sheet = null; return keepScroll(render); }
-    if (act === 'filter') { e.preventDefault(); ui.filter = el.dataset.v; ui.sheet = null; if (location.hash !== '#/clients') location.hash = '#/clients'; else render(); return; }
+    if (act === 'filter') { e.preventDefault(); ui.filter = el.dataset.v; ui.sheet = null; if (location.hash !== '#/clients') location.hash = '#/clients'; else keepScroll(render); return; }
     if (act === 'refresh') return refresh({ force: true });
     if (act === 'backup') return downloadBackup();
     if (act === 'logout') { if (confirm('ログアウトしますか？')) logout(); return; }
 
-    // タスクのボタン：タップで 済 ⇄ 未（「元に戻す」つき）
     if (act.startsWith('tg-') && c) {
       const w = Number(el.dataset.w);
       const r = rec(c.id, w) || {};
       const t = fd(today());
       el.disabled = true;
-      let undo = null;
+      let undo = null, label = '';
       try {
-        if (act === 'tg-checkin') { const v = !r.checkinDone; await patchWeek(c.id, w, { checkinDone: v }); undo = () => patchWeek(c.id, w, { checkinDone: !v }); }
-        if (act === 'tg-report') { const v = !r.reportSent; await patchWeek(c.id, w, { reportSent: v }); undo = () => patchWeek(c.id, w, { reportSent: !v }); }
-        if (act === 'tg-meeting') { const old = r.meetingDate || ''; await patchWeek(c.id, w, { meetingDate: old ? '' : t }); undo = () => patchWeek(c.id, w, { meetingDate: old }); }
-        if (act === 'tg-eval') { const k = el.dataset.key; const old = c[k] || ''; await patchClient(c.id, { [k]: old ? '' : t }); undo = () => patchClient(c.id, { [k]: old }); }
-        if (act === 'tg-final') { const old = c.finalDone || ''; await patchClient(c.id, { finalDone: old ? '' : t }); undo = () => patchClient(c.id, { finalDone: old }); }
-        if (act === 'tg-paid') { const old = c.paidDate || ''; await patchClient(c.id, { paidDate: old ? '' : t }); undo = () => patchClient(c.id, { paidDate: old }); }
+        if (act === 'tg-checkin') { const v = !r.checkinDone; await patchWeek(c.id, w, { checkinDone: v }); undo = () => patchWeek(c.id, w, { checkinDone: !v }); label = v ? 'チェックインを済にしました' : 'チェックインを未にしました'; }
+        if (act === 'tg-report') { const v = !r.reportSent; await patchWeek(c.id, w, { reportSent: v }); undo = () => patchWeek(c.id, w, { reportSent: !v }); label = v ? 'レポートを済にしました' : 'レポートを未にしました'; }
+        if (act === 'tg-meeting') { const old = r.meetingDate || ''; await patchWeek(c.id, w, { meetingDate: old ? '' : t }); undo = () => patchWeek(c.id, w, { meetingDate: old }); label = old ? '面談を未にしました' : '面談を済にしました'; }
+        if (act === 'tg-eval') { const k = el.dataset.key; const old = c[k] || ''; await patchClient(c.id, { [k]: old ? '' : t }); undo = () => patchClient(c.id, { [k]: old }); label = old ? '身体評価を未にしました' : '身体評価を済にしました'; }
+        if (act === 'tg-final') { const old = c.finalDone || ''; await patchClient(c.id, { finalDone: old ? '' : t }); undo = () => patchClient(c.id, { finalDone: old }); label = old ? '最終評価を未にしました' : '最終評価を済にしました'; }
+        if (act === 'tg-paid') { const old = c.paidDate || ''; await patchClient(c.id, { paidDate: old ? '' : t }); undo = () => patchClient(c.id, { paidDate: old }); label = old ? '入金を未確認に戻しました' : '入金を確認済みにしました'; }
       } catch (_) { /* toast 済 */ }
       keepScroll(render);
-      if (undo) toast('更新しました', async () => { try { await undo(); } catch (_) { /* toast 済 */ } keepScroll(render); });
+      if (undo) toast(label, async () => { try { await undo(); } catch (_) { /* toast 済 */ } keepScroll(render); });
       return;
     }
     if (act === 'step' && c) {
@@ -1179,7 +1124,8 @@
       const r = rec(c.id, w) || {};
       const v = Math.max(0, Math.min(Number(el.dataset.max), (Number(r[name]) || 0) + Number(el.dataset.d)));
       if (v === (Number(r[name]) || 0)) return;
-      el.closest('.stepper').querySelector('output').firstChild.textContent = v;
+      const val = el.closest('.cell').querySelector('.val');
+      if (val) val.textContent = v + (name === 'formVideos' ? '本' : '日');
       try { await patchWeek(c.id, w, { [name]: v }); } catch (_) { keepScroll(render); }
       return;
     }
@@ -1236,13 +1182,15 @@
     e.preventDefault();
     const f = e.target;
     const cid = decodeURIComponent((location.hash.split('/')[2] || ''));
-    const btn = f.querySelector('[type="submit"]');
-    btn.disabled = true;
     try { await patchClient(cid, { finalPlan: f.finalPlan.value, finalDone: f.finalDone.value || '' }); toast('最終評価を保存しました'); keepScroll(render); }
-    catch (_) { btn.disabled = false; }
+    catch (_) { /* toast 済 */ }
   });
 
-  window.addEventListener('hashchange', () => { ui.sheet = null; render(); window.scrollTo(0, 0); });
+  window.addEventListener('hashchange', () => { ui.sheet = null; render(); window.scrollTo(0, 0); document.body.classList.remove('scrolled'); });
+  // スクロールしたらナビゲーションバーに小さいタイトルを出す（iOS の大きなタイトルと同じ動き）
+  window.addEventListener('scroll', () => { document.body.classList.toggle('scrolled', window.scrollY > 40); }, { passive: true });
+  // シートは Esc でも閉じる
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ui.sheet) { ui.sheet = null; keepScroll(render); } });
 
   let hiddenAt = 0;
   document.addEventListener('visibilitychange', () => {

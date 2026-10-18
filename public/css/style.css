@@ -1,58 +1,58 @@
 :root {
-  --bg: #F7F5F1;
-  --surface: #FFFFFF;
-  --surface-2: #F1EEE8;
-  --ink: #2A2724;
-  --muted: #776F66;
-  --line: #E4DED4;
-  --primary: #3D4A3F;
-  --primary-ink: #FFFFFF;
-  --ok: #4E6B57;
-  --ok-bg: #E6EEE7;
-  --camel: #C19A6B;
-  --camel-bg: #F6ECDF;
-  --camel-ink: #6E4F2A;
-  --dot-empty: #D9D2C6;
-  --shadow: 0 1px 2px rgba(42, 39, 36, .06), 0 2px 8px rgba(42, 39, 36, .04);
-  --radius: 14px;
-  color-scheme: light;
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --surface-2: #f2f2f7;
+  --ink: #000000;
+  --muted: rgba(60, 60, 67, .6);
+  --line: rgba(60, 60, 67, .18);
+  --primary: rgb(0, 122, 255);
+  --primary-ink: #ffffff;
+  --ok: rgb(0, 137, 50);
+  --ok-bg: rgba(52, 199, 89, .14);
+  --camel: rgb(172, 127, 94);
+  --camel-bg: rgba(172, 127, 94, .14);
+  --camel-ink: rgb(149, 109, 81);
+  --dot-empty: rgba(60, 60, 67, .3);
+  --shadow: none;
+  --radius: 12px;
+  color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #1B1A18;
-    --surface: #252320;
-    --surface-2: #2E2B27;
-    --ink: #EEE9E2;
-    --muted: #A69D92;
-    --line: #3A3631;
-    --primary: #A9BBA9;
-    --primary-ink: #1B1A18;
-    --ok: #9DBBA5;
-    --ok-bg: #2B3A30;
-    --camel: #C9A57A;
-    --camel-bg: #3A2F22;
-    --camel-ink: #E8CFAE;
-    --dot-empty: #4A453E;
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --surface-2: #2c2c2e;
+    --ink: #ffffff;
+    --muted: rgba(235, 235, 245, .6);
+    --line: rgba(84, 84, 88, .6);
+    --primary: rgb(10, 132, 255);
+    --primary-ink: #ffffff;
+    --ok: rgb(48, 209, 88);
+    --ok-bg: rgba(48, 209, 88, .16);
+    --camel: rgb(183, 138, 102);
+    --camel-bg: rgba(183, 138, 102, .18);
+    --camel-ink: rgb(196, 152, 114);
+    --dot-empty: rgba(235, 235, 245, .3);
     --shadow: none;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #1B1A18;
-  --surface: #252320;
-  --surface-2: #2E2B27;
-  --ink: #EEE9E2;
-  --muted: #A69D92;
-  --line: #3A3631;
-  --primary: #A9BBA9;
-  --primary-ink: #1B1A18;
-  --ok: #9DBBA5;
-  --ok-bg: #2B3A30;
-  --camel: #C9A57A;
-  --camel-bg: #3A2F22;
-  --camel-ink: #E8CFAE;
-  --dot-empty: #4A453E;
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --ink: #ffffff;
+  --muted: rgba(235, 235, 245, .6);
+  --line: rgba(84, 84, 88, .6);
+  --primary: rgb(10, 132, 255);
+  --primary-ink: #ffffff;
+  --ok: rgb(48, 209, 88);
+  --ok-bg: rgba(48, 209, 88, .16);
+  --camel: rgb(183, 138, 102);
+  --camel-bg: rgba(183, 138, 102, .18);
+  --camel-ink: rgb(196, 152, 114);
+  --dot-empty: rgba(235, 235, 245, .3);
   --shadow: none;
   color-scheme: dark;
 }
@@ -63,7 +63,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
