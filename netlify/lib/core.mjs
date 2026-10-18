@@ -70,6 +70,7 @@ export async function handle(body, ctx) {
       case 'deleteClient': return await deleteClient(body.id, ctx.store);
       case 'saveWeek':     return await saveWeek(body.week, ctx.store);
       case 'issueFormKey': return await issueFormKey(body.id, ctx.store);
+      case 'renewClient':  return await renewClient(body.id, body.paidDate, ctx.store);
       default:             throw new ApiError('bad_request');
     }
   } catch (err) {
@@ -173,6 +174,37 @@ async function saveWeek(input, store) {
     return d;
   });
   return { ok: true, week: doc.weeks[patch.week] };
+}
+
+/**
+ * 更新（次の12週）の入金を確認したとき：いまの期間を履歴（client.cycles）に移して、新しい期間を始める。
+ * 開始日は空にするので、管理画面で決め直す。
+ */
+async function renewClient(id, paidDate, store) {
+  id = cast('id', id);
+  paidDate = cast('date', paidDate);
+  if (!id || !paidDate) throw new ApiError('bad_request');
+  const now = new Date().toISOString();
+  const doc = await update(store, id, (d) => {
+    const c = { ...d.client };
+    if (c.startDate) {
+      const cycles = Array.isArray(c.cycles) ? c.cycles.slice() : [];
+      cycles.push({
+        paidDate: c.paidDate, startDate: c.startDate, goal: c.goal,
+        eval0: c.eval0, eval4: c.eval4, eval8: c.eval8, eval12: c.eval12,
+        finalDone: c.finalDone, finalPlan: c.finalPlan, weeks: d.weeks || {}, closedAt: now,
+      });
+      c.cycles = cycles.slice(-20);
+      d.weeks = {};
+      for (const k of ['eval0', 'eval4', 'eval8', 'eval12', 'finalDone', 'finalPlan', 'startDate']) c[k] = '';
+    }
+    c.paidDate = paidDate;
+    c.status = '進行中';
+    c.updatedAt = now;
+    d.client = c;
+    return d;
+  });
+  return { ok: true, client: doc.client };
 }
 
 // ---------------------------------------------------------------- お客様用リンク

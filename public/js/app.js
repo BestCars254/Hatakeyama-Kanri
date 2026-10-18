@@ -490,16 +490,17 @@
     const intake = c.intake && c.intake.submittedAt;
     const since = (d) => (d ? Math.max(0, diffDays(t, d)) : 0);
     if (c.status === ST.WAIT) {
-      if (!c.paidDate) {
-        const cr = c.createdAt ? new Date(c.createdAt) : t;
-        out.push({ short: '入金待ち', long: '入金の確認', days: since(new Date(cr.getFullYear(), cr.getMonth(), cr.getDate())), level: 'late' });
-      } else if (!c.startDate) {
-        out.push({ short: '開始日', long: '開始日の決定', days: since(pd(c.paidDate)), level: 'late' });
-      }
-      if (!intake) out.push({ short: 'ヒアリング', long: 'ヒアリングの回答', level: 'info' });
+      // 入金待ち＝更新（次の12週）の入金を待っているお客様
+      const from = pd((c.updatedAt || '').slice(0, 10)) || t;
+      out.push({ short: '更新の入金', long: '更新の入金確認', days: since(from), level: 'today' });
       return out;
     }
     if (c.status !== ST.ACTIVE) return out;
+    if (!c.startDate) {
+      out.push({ short: '開始日を決める', long: '開始日の決定', level: 'today' });
+      if (!intake) out.push({ short: 'ヒアリング', long: 'ヒアリングの回答', level: 'info' });
+      return out;
+    }
     const tk = tasksOf(c.id);
     for (const x of tk.overdue) {
       if (x.kind === 'go') out.push({ short: x.key === 'ended' ? '12週終了' : '開始日', long: x.key === 'ended' ? '状態の更新' : '開始日の設定', days: since(x.date), level: 'late' });
@@ -515,7 +516,7 @@
     const late = iss.filter((i) => i.level === 'late').sort((a, b) => (b.days || 0) - (a.days || 0));
     if (late.length) return `<span class="badge late">${esc(late[0].short)}${late[0].days ? ` ${late[0].days}日` : ''}</span>`;
     const td = iss.find((i) => i.level === 'today');
-    if (td) return `<span class="badge today">${esc(td.short)} 今日</span>`;
+    if (td) return `<span class="badge today">${esc(td.short)}${td.days ? ` ${td.days}日` : /決める|入金/.test(td.short) ? '' : ' 今日'}</span>`;
     const info = iss.find((i) => i.level === 'info');
     if (info) return `<span class="badge info">${esc(info.short)}未</span>`;
     return '<span class="badge ok">順調</span>';
@@ -528,7 +529,8 @@
   }
   function subLine(c) {
     const s = sched(c);
-    if (c.status === ST.WAIT) return c.paidDate ? `入金済 ${mdwS(c.paidDate)}・開始日未定` : '入金待ち';
+    if (c.status === ST.WAIT) return `更新の入金待ち${(c.cycles || []).length ? `・${(c.cycles || []).length + 1}期目` : ''}`;
+    if (c.status === ST.ACTIVE && !c.startDate) return `入金済 ${mdwS(c.paidDate)}・開始日を決めてください`;
     if (c.status === ST.DONE) return '終了';
     if (c.status === ST.CONSULT) return '継続相談';
     if (!s) return '開始日未定';
@@ -572,7 +574,17 @@
 
   // ================================================================ ホーム
 
-  function paidIn(y, m) { return state.clients.filter((c) => { const d = pd(c.paidDate); return d && d.getFullYear() === y && d.getMonth() === m; }); }
+  /** その月に入金したお客様（更新の入金も含む）。同じ人が2回入れば2件 */
+  function paidIn(y, m) {
+    const out = [];
+    for (const c of state.clients) {
+      for (const p of [c.paidDate, ...(c.cycles || []).map((x) => x.paidDate)]) {
+        const d = pd(p);
+        if (d && d.getFullYear() === y && d.getMonth() === m) out.push(c);
+      }
+    }
+    return out;
+  }
   const yen = (n) => '¥' + n.toLocaleString('ja-JP');
 
   function renderHome() {
@@ -594,7 +606,7 @@
       <main class="page">
         ${largeTitle('ホーム', `${t.getMonth() + 1}月${t.getDate()}日 ${DOW[t.getDay()]}曜日`)}
         <div class="summary">
-          ${sum(ST.ACTIVE, '進行中', n.active, 'var(--tint)')}${sum(ST.WAIT, '入金待ち', n.wait, 'var(--teal)')}
+          ${sum(ST.ACTIVE, '進行中', n.active, 'var(--tint)')}${sum(ST.WAIT, '更新の入金待ち', n.wait, 'var(--teal)')}
           ${sum(ST.DONE, '終了', n.done, 'var(--gray)')}${sum('late', '遅れ', n.late, 'var(--brown)', n.late ? 'late' : '')}
         </div>
         ${group('', `<a class="cell" href="#/money"><span class="cell-main"><span class="t">${t.getMonth() + 1}月の入金</span></span><span class="v strong">${yen(paid.length * PRICE)}（${paid.length}名）</span>${chev}</a>`)}
@@ -626,7 +638,8 @@
   function weekTasks(c) {
     const s = sched(c);
     const t = today();
-    if (c.status === ST.WAIT) return [{ act: 'tg-paid', done: !!c.paidDate, label: '入金を確認した', sub: c.paidDate ? `${mdwS(c.paidDate)}に確認` : '確認すると売上に入ります' }];
+    if (c.status === ST.WAIT) return [{ act: 'tg-renew', done: false, label: '更新の入金を確認した', sub: '確認すると次の12週が始まり、売上に入ります' }];
+    if (c.status === ST.ACTIVE && !c.startDate) return [{ act: 'go-edit', done: false, label: '開始日とチェックイン曜日を決める', sub: '決めると毎週の予定が自動で出ます' }];
     if (c.status !== ST.ACTIVE || !s || s.cur < 1) return [];
     const w = Math.min(s.cur, WEEKS);
     const r = rec(c.id, w) || {};
@@ -647,7 +660,8 @@
     return out;
   }
   function taskCells(c) {
-    return weekTasks(c).map((x) => `
+    return weekTasks(c).map((x) => x.act === 'go-edit' ? `
+      <a class="cell" href="#/edit/${encodeURIComponent(c.id)}"><span class="cell-main"><span class="t" style="color:var(--tint)">${esc(x.label)}</span><span class="s">${esc(x.sub)}</span></span>${chev}</a>` : `
       <button type="button" class="cell${x.done ? ' done' : ''}" role="checkbox" aria-checked="${x.done}" data-act="${x.act}" data-id="${esc(c.id)}"${x.w ? ` data-w="${x.w}"` : ''}${x.key ? ` data-key="${x.key}"` : ''}>
         <span class="circle${x.done ? ' on' : x.late ? ' late' : ''}">${I.check}</span>
         <span class="cell-main"><span class="t">${esc(x.label)}</span><span class="s${x.late ? ' late-t' : ''}">${esc(x.sub)}${x.late ? '・遅れ' : ''}</span></span>
@@ -661,9 +675,13 @@
     return `${san(c.name)}\n${head0}畠山です。\n\n開始前に、こちらの事前ヒアリングにご回答をお願いします（5分ほど）。\n${formUrl(c)}\n\nこのリンクは、開始後の毎週のチェックインにも使います。ブックマークしておいてください。`;
   }
   function msgCheckin(c) { return `${san(c.name)}\n今週のチェックインをお願いします。\n${formUrl(c)}`; }
+  function msgRenew(c) {
+    return `${san(c.name)}\n継続のお申し込みありがとうございます。畠山です。\n次の12週（税込33万円）のお振込みを確認でき次第、開始日をご相談させてください。`;
+  }
   function mainMessage(c) {
     const intake = c.intake && c.intake.submittedAt;
-    return !intake || c.status !== ST.ACTIVE ? { text: msgIntake(c), label: intake ? 'リンクをLINEで送る' : 'ヒアリングをLINEで送る' } : { text: msgCheckin(c), label: 'チェックインのお願いをLINEで送る' };
+    if (c.status === ST.WAIT) return { text: msgRenew(c), label: '更新のご案内をLINEで送る' };
+    return !intake || c.status !== ST.ACTIVE || !c.startDate ? { text: msgIntake(c), label: intake ? 'リンクをLINEで送る' : 'ヒアリングをLINEで送る' } : { text: msgCheckin(c), label: 'チェックインのお願いをLINEで送る' };
   }
   const lineHref = (text) => `https://line.me/R/share?text=${encodeURIComponent(text)}`;
 
@@ -681,8 +699,8 @@
         <div class="sheet-h"><div><h2>${esc(san(c.name))}</h2><p>${esc(subLine(c))}</p></div>
           <button type="button" class="xbtn" data-act="close-sheet" aria-label="閉じる">${I.x}</button></div>
         ${late ? `<div class="notice"><span class="ic">${I.warn}</span><div><b>遅れています</b><span>${esc(late)}</span></div></div>` : ''}
-        ${tasks ? group('今週のタスク', tasks) : ''}
-        ${group('', kv('ヒアリング', c.intake && c.intake.submittedAt ? '回答済み' : '未回答', c.intake && c.intake.submittedAt ? 'ok-t' : 'late-t'))}
+        ${tasks ? group('やること', tasks) : ''}
+        ${c.status === ST.WAIT ? '' : group('', kv('ヒアリング', c.intake && c.intake.submittedAt ? '回答済み' : '未回答', c.intake && c.intake.submittedAt ? 'ok-t' : 'late-t'))}
         <div class="btns">
           ${m ? `<a class="btn line" href="${lineHref(m.text)}" target="_blank" rel="noopener noreferrer">${I.msg}${m.label}</a>` : ''}
           <a class="btn gray" href="#/c/${encodeURIComponent(c.id)}">詳細を見る</a>
@@ -702,7 +720,7 @@
       if (f !== 'all') return c.status === f;
       return true;
     }).sort((a, b) => maxDays(b.iss) - maxDays(a.iss) || (a.c.startDate || '9').localeCompare(b.c.startDate || '9'));
-    const segs = [['all', 'すべて'], [ST.ACTIVE, '進行中'], [ST.WAIT, '入金待ち'], [ST.DONE, '終了'], ['late', '遅れ']];
+    const segs = [['all', 'すべて'], [ST.ACTIVE, '進行中'], [ST.WAIT, '入金待ち'], [ST.DONE, '終了'], ['late', '遅れ']]; // 入金待ち＝更新
     $app.innerHTML = `
       ${navbar({ title: 'お客様', right: addBtn })}
       <main class="page">
@@ -729,7 +747,7 @@
     const t = today();
     const months = [];
     for (let i = 0; i < 12; i++) { const d = new Date(t.getFullYear(), t.getMonth() - i, 1); months.push({ d, list: paidIn(d.getFullYear(), d.getMonth()) }); }
-    const total = state.clients.filter((c) => c.paidDate).length;
+    const total = state.clients.reduce((n, c) => n + (c.paidDate ? 1 : 0) + (c.cycles || []).filter((x) => x.paidDate).length, 0);
     $app.innerHTML = `
       ${navbar({ title: '売上' })}
       <main class="page">
@@ -823,15 +841,36 @@
 
         ${historyGroup(c, s)}
 
+        ${cyclesGroup(c)}
         ${c.status === ST.ACTIVE || c.status === ST.DONE || c.status === ST.CONSULT ? group('状態', [
           c.status === ST.ACTIVE && s && s.cur >= 11 ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.CONSULT}"><span class="cell-main"><span class="t">継続の相談に進む</span></span></button>` : '',
           c.status === ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.DONE}"><span class="cell-main"><span class="t">終了にする</span></span></button>` : '',
+          c.status !== ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.WAIT}"><span class="cell-main"><span class="t">更新する（次の12週）</span><span class="s">更新の入金待ちにします</span></span></button>` : '',
           c.status !== ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.ACTIVE}"><span class="cell-main"><span class="t">進行中に戻す</span></span></button>` : '',
         ].join('')) : ''}
         ${group('', `<button type="button" class="cell danger center" data-act="delete" data-id="${esc(c.id)}"><span class="cell-main"><span class="t">このお客様を削除</span></span></button>`)}
       </main>
       ${tabbar('')}`;
     drawChart(c);
+  }
+
+  /** これまでの期間（更新前の12週） */
+  function cyclesGroup(c) {
+    const cy = c.cycles || [];
+    if (!cy.length) return '';
+    const rows = cy.map((x, i) => {
+      const st = pd(x.startDate);
+      const ws = Object.values(x.weeks || {});
+      const kgs = ws.slice().sort((a, b) => a.week - b.week).map(avgW).filter((v) => v != null);
+      const meet = ws.filter((r) => r.meetingDate).length;
+      const rep = ws.filter((r) => r.reportSent).length;
+      const range = st ? `${fd(st).replace(/-/g, '/')}〜${fd(addDays(st, WEEKS * 7 - 1)).replace(/-/g, '/')}` : '';
+      const wt = kgs.length >= 2 ? `体重 ${kgs[0].toFixed(1)}→${kgs[kgs.length - 1].toFixed(1)}kg・` : '';
+      return `<div class="cell"><span class="cell-main"><span class="t b">第${i + 1}期 <span style="font-weight:400;color:var(--label2);font-size:.88rem">${range}</span></span>
+        <span class="s">${wt}面談 ${meet}/12・レポート ${rep}/12${x.paidDate ? `・入金 ${x.paidDate.replace(/-/g, '/')}` : ''}</span>
+        ${x.finalPlan ? `<span class="quote">${esc(x.finalPlan)}</span>` : ''}</span><span class="badge ok">済</span></div>`;
+    }).reverse().join('');
+    return group(`これまでの期間（いまは第${cy.length + 1}期）`, rows);
   }
 
   function stepper(cid, w, name, max) {
@@ -1002,8 +1041,8 @@
         <form id="newForm" novalidate>
           ${group('', `<label class="cell"><span class="lab">名前</span><input type="text" name="name" autocomplete="off" placeholder="田中 太郎"></label>
             <label class="cell"><span class="lab">LINE名</span><input type="text" name="lineName" autocomplete="off" placeholder="必須"></label>
-            <label class="cell"><span class="cell-main"><span class="t">入金確認日</span><span class="s">まだなら空欄でOK</span></span><input type="date" name="paidDate"></label>`,
-            '追加すると、お客様に送る事前ヒアリングのリンクと案内文ができます。開始日などは入金確認後に「編集」で入れます。')}
+            <label class="cell"><span class="cell-main"><span class="t">入金確認日</span></span><input type="date" name="paidDate" value="${fd(today())}"></label>`,
+            '入金を確認したお客様を登録します。追加すると、事前ヒアリングのリンクと案内文ができます。開始日とチェックイン曜日は、あとで決めて入れてください。')}
           <p class="err" id="editErr"></p>
           <div class="btns"><button class="btn filled" type="submit">追加</button></div>
         </form>
@@ -1015,10 +1054,11 @@
       const err = document.getElementById('editErr');
       const name = f.name.value.trim(), lineName = f.lineName.value.trim();
       if (!name || !lineName) { err.textContent = '名前とLINE名を入力してください。'; (name ? f.lineName : f.name).focus(); return; }
+      if (!f.paidDate.value) { err.textContent = '入金確認日を入れてください。'; return; }
       const btn = f.querySelector('[type="submit"]');
       btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
       try {
-        const d = await api('saveClient', { client: { name, lineName, paidDate: f.paidDate.value, status: ST.WAIT } });
+        const d = await api('saveClient', { client: { name, lineName, paidDate: f.paidDate.value, status: ST.ACTIVE } });
         state.clients.push(d.client);
         saveCache();
         toast('追加しました。リンクをLINEで送ってください');
@@ -1059,14 +1099,12 @@
     f.addEventListener('input', (e) => {
       state.dirty = true;
       if (e.target.name === 'startDate') endHint();
-      if ((e.target.name === 'paidDate' || e.target.name === 'startDate') && f.status.value === ST.WAIT && f.paidDate.value && f.startDate.value) f.status.value = ST.ACTIVE;
     });
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const err = document.getElementById('editErr');
       const name = f.name.value.trim();
       if (!name) { err.textContent = '名前を入力してください。'; return; }
-      if (f.status.value === ST.ACTIVE && !f.startDate.value) { err.textContent = '「進行中」にするには開始日が必要です。'; return; }
       const data = { id: c.id, name, lineName: f.lineName.value.trim(), paidDate: f.paidDate.value, startDate: f.startDate.value,
         checkinDow: f.checkinDow.value, meetingDow: f.meetingDow.value, goal: f.goal.value, status: f.status.value, memo: f.memo.value };
       const btn = f.querySelector('[type="submit"]');
@@ -1112,6 +1150,19 @@
         if (act === 'tg-meeting') { const old = r.meetingDate || ''; await patchWeek(c.id, w, { meetingDate: old ? '' : t }); undo = () => patchWeek(c.id, w, { meetingDate: old }); label = old ? '面談を未にしました' : '面談を済にしました'; }
         if (act === 'tg-eval') { const k = el.dataset.key; const old = c[k] || ''; await patchClient(c.id, { [k]: old ? '' : t }); undo = () => patchClient(c.id, { [k]: old }); label = old ? '身体評価を未にしました' : '身体評価を済にしました'; }
         if (act === 'tg-final') { const old = c.finalDone || ''; await patchClient(c.id, { finalDone: old ? '' : t }); undo = () => patchClient(c.id, { finalDone: old }); label = old ? '最終評価を未にしました' : '最終評価を済にしました'; }
+        if (act === 'tg-renew') {
+          el.disabled = false;
+          if (!confirm(`${san(c.name)}の更新の入金を確認しましたか？\n今の期間は「これまでの期間」に移り、次の12週が始まります。`)) return;
+          const d = await api('renewClient', { id: c.id, paidDate: t });
+          const i = state.clients.findIndex((x) => x.id === c.id);
+          if (i >= 0) state.clients[i] = d.client;
+          delete state.weeks[c.id];
+          saveCache();
+          ui.sheet = null;
+          toast('更新しました。開始日を決めてください');
+          location.hash = '#/edit/' + encodeURIComponent(c.id);
+          return;
+        }
         if (act === 'tg-paid') { const old = c.paidDate || ''; await patchClient(c.id, { paidDate: old ? '' : t }); undo = () => patchClient(c.id, { paidDate: old }); label = old ? '入金を未確認に戻しました' : '入金を確認済みにしました'; }
       } catch (_) { /* toast 済 */ }
       keepScroll(render);
