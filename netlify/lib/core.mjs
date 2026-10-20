@@ -5,17 +5,11 @@
  *   c/{id}        … お客様1人分 { client, weeks: { [週番号]: 記録 } }
  *   k/{formKey}   … お客様用リンクの鍵 → { clientId }
  *   p/{clientId}/{期}/{週}/{front|side|back} … チェックインの写真（JPEG）
- *   _auth/fails   … ログイン失敗の回数
  *
- * 環境変数（Netlify のサイト設定 → Environment variables）
- *   APP_PASSWORD … ログイン用パスワード
- *   TOKEN_SECRET … トークン署名用の秘密鍵（長いランダム文字列）
+ * パスワードは使わない（URL を知っていれば誰でも見られる・編集できる）
  */
 import crypto from 'node:crypto';
 
-const TOKEN_TTL_MS = 30 * 86400000;
-const LOGIN_MAX_FAILS = 10;      // この回数失敗すると…
-const LOGIN_LOCK_MS = 15 * 60000; // …15分ログインを止める
 const STATUSES = ['入金待ち', '進行中', '終了', '継続相談'];
 
 const CLIENT_FIELDS = {
@@ -58,22 +52,17 @@ class ApiError extends Error {
 
 // ---------------------------------------------------------------- 入口
 
-/** @param body リクエスト JSON  @param ctx { store, env } */
+/** @param body リクエスト JSON  @param ctx { store } */
 export async function handle(body, ctx) {
   try {
     if (!body || typeof body !== 'object') throw new ApiError('bad_request');
-    if (!ctx.env.APP_PASSWORD || !ctx.env.TOKEN_SECRET) throw new ApiError('not_configured');
-    if (body.action === 'login') return await login(body.password, ctx);
-
-    // お客様用リンク（ログイン不要。鍵で1人分だけ読み書きできる）
+    // お客様用リンク（鍵で1人分だけ読み書きできる）
     switch (body.action) {
       case 'formGet':           return await formGet(body.key, ctx.store);
       case 'formIntake':        return await formIntake(body.key, body.answers, ctx.store);
       case 'formCheckin':       return await formCheckin(body.key, body.checkin, ctx.store);
       case 'formPhoto':         return await formPhoto(body.key, body.week, body.slot, body.data, ctx.store);
     }
-
-    if (!verifyToken(body.token, ctx.env.TOKEN_SECRET)) return { ok: false, error: 'unauthorized' };
 
     switch (body.action) {
       case 'getAll':       return await getAll(ctx.store);
@@ -90,47 +79,6 @@ export async function handle(body, ctx) {
     console.error(err);
     return { ok: false, error: 'server_error' };
   }
-}
-
-// ---------------------------------------------------------------- 認証
-
-async function login(password, { store, env }) {
-  const fails = (await store.get('_auth/fails', { type: 'json' })) || { count: 0, until: 0 };
-  const now = Date.now();
-  if (fails.until > now && fails.count >= LOGIN_MAX_FAILS) return { ok: false, error: 'locked' };
-
-  if (typeof password !== 'string' || !safeEqual(sha256(password), sha256(env.APP_PASSWORD))) {
-    const next = fails.until > now ? { count: fails.count + 1, until: fails.until } : { count: 1, until: now + LOGIN_LOCK_MS };
-    await store.setJSON('_auth/fails', next);
-    await new Promise((r) => setTimeout(r, 800));
-    return { ok: false, error: 'bad_password' };
-  }
-  if (fails.count) await store.delete('_auth/fails');
-
-  const exp = now + TOKEN_TTL_MS;
-  const payload = b64url(JSON.stringify({ exp, n: crypto.randomUUID() }));
-  return { ok: true, token: payload + '.' + sign(payload, env.TOKEN_SECRET), exp };
-}
-
-export function verifyToken(token, secret) {
-  if (typeof token !== 'string' || token.length > 512) return false;
-  const [payload, sig, extra] = token.split('.');
-  if (!payload || !sig || extra !== undefined) return false;
-  if (!safeEqual(sign(payload, secret), sig)) return false;
-  try {
-    const body = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return typeof body.exp === 'number' && body.exp > Date.now();
-  } catch (_) {
-    return false;
-  }
-}
-
-const b64url = (s) => Buffer.from(s, 'utf8').toString('base64url');
-const sign = (payload, secret) => crypto.createHmac('sha256', secret).update(payload).digest('base64url');
-const sha256 = (s) => crypto.createHash('sha256').update(s, 'utf8').digest();
-function safeEqual(a, b) {
-  const x = Buffer.from(a), y = Buffer.from(b);
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
 // ---------------------------------------------------------------- 処理

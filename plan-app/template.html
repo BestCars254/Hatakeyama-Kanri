@@ -150,7 +150,6 @@ button { background: none; border: 0; cursor: pointer; }
   "subtitle": "",
   "accent": "#e0ad74",
   "checkinUrl": "",
-  "pwHash": "0e4f7b561e45d5c660d8c767da72d0b4317c4bc2e8620424bf1b6a61c69b932c",
   "days": [],
   "diet": [],
   "cardio": [],
@@ -171,15 +170,10 @@ button { background: none; border: 0; cursor: pointer; }
   const DONE_KEY = (d) => `hk_done_${slug}_${d}_${new Date().toISOString().slice(0, 10)}`;
   let tab = 'train';
   let dayIdx = 0;
-  let unlocked = false;
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* なくても動く */ } }
-  async function sha256(t) {
-    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
-    return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
-  }
 
   let toastT = null;
   function toast(msg) { const el = document.getElementById('toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 3200); }
@@ -267,7 +261,7 @@ button { background: none; border: 0; cursor: pointer; }
         <header class="hd"><span class="brand">${IC.logo}HATAKEYAMA <b>COACHING</b></span>
           <h1>${esc((p && p.title) || `${plan.name}様のプラン`)}</h1>${p && p.subtitle ? `<p>${esc(p.subtitle)}</p>` : ''}</header>
         ${body}
-        <p class="foot"><button type="button" data-act="edit">編集（コーチ用）</button></p>
+        <p class="foot"><button type="button" data-act="edit">編集</button></p>
       </div>
       <nav class="bn">${tabs.map(([k, l, ic]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-tab="${k}">${ic}<span>${l}</span></button>`).join('')}
         ${p && /^https:\/\//.test(p.checkinUrl || '') ? `<a href="${esc(p.checkinUrl)}" target="_blank" rel="noopener noreferrer">${IC.check}<span>チェックイン</span></a>` : ''}</nav>`;
@@ -287,30 +281,10 @@ button { background: none; border: 0; cursor: pointer; }
       const y = window.scrollY; render(); window.scrollTo(0, y);
       return;
     }
-    if (t.dataset.act === 'edit') askPassword();
+    if (t.dataset.act === 'edit') openEditor();
   });
 
   // ================================================================ 編集（コーチ用）
-
-  function askPassword() {
-    if (unlocked) return openEditor();
-    const m = document.createElement('div');
-    m.className = 'modal';
-    m.innerHTML = `<form><h2>編集</h2><p>コーチ用のパスワードを入れてください。</p>
-      <input type="password" name="pw" autocomplete="current-password" aria-label="パスワード">
-      <div class="err" hidden></div>
-      <div class="row"><button type="button" class="b" data-c>キャンセル</button><button class="b p" type="submit">開く</button></div></form>`;
-    document.body.appendChild(m);
-    const f = m.querySelector('form');
-    f.pw.focus();
-    m.querySelector('[data-c]').onclick = () => m.remove();
-    f.onsubmit = async (e) => {
-      e.preventDefault();
-      const er = m.querySelector('.err');
-      if (await sha256(f.pw.value) === plan.pwHash) { unlocked = true; m.remove(); openEditor(); }
-      else { er.hidden = false; er.textContent = 'パスワードが違います。'; }
-    };
-  }
 
   let draft = null;
 

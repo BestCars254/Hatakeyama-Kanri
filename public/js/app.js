@@ -4,7 +4,6 @@
   // ================================================================ 定数
 
   const API_URL = '/api';
-  const TOKEN_KEY = 'hk_token';
   const CACHE_KEY = 'hk_cache';
   const WEEKS = 12;
   const DOW = ['日', '月', '火', '水', '木', '金', '土'];
@@ -23,12 +22,9 @@
   const MEAL_TARGET = 3;
   const OVERDUE_SHOWN = 8;
   const ERRORS = {
-    bad_password: 'パスワードが違います。',
     locked: 'ログインの失敗が続いたため、15分ほど時間をおいてください。',
-    not_configured: 'サーバーの設定が済んでいません（Netlify の環境変数 APP_PASSWORD・TOKEN_SECRET）。',
     network: '通信できませんでした。電波状況を確認して、もう一度お試しください。',
     conflict: '同時に保存されました。画面を更新して、もう一度保存してください。',
-    unauthorized: 'ログインの有効期限が切れました。もう一度ログインしてください。',
     not_found: 'お客様が見つかりませんでした。画面を更新してください。',
   };
 
@@ -277,17 +273,8 @@
 
   // ================================================================ API
 
-  function getToken() {
-    try {
-      const o = JSON.parse(lsGet(TOKEN_KEY) || 'null');
-      if (o && o.token && o.exp > Date.now()) return o.token;
-    } catch (_) { /* 壊れていたら捨てる */ }
-    return null;
-  }
-
   async function api(action, payload) {
     const body = Object.assign({ action }, payload || {});
-    if (action !== 'login') body.token = getToken();
     let res;
     try {
       res = await fetch(API_URL, {
@@ -300,10 +287,7 @@
     } catch (_) { throw new Error('network'); }
     let data;
     try { data = await res.json(); } catch (_) { throw new Error('network'); }
-    if (!data.ok) {
-      if (data.error === 'unauthorized') { logout(); toast(ERRORS.unauthorized); }
-      throw new Error(data.error || 'server');
-    }
+    if (!data.ok) throw new Error(data.error || 'server');
     return data;
   }
   const errText = (e) => ERRORS[e && e.message] || 'エラーが発生しました。時間をおいてもう一度お試しください。';
@@ -331,7 +315,7 @@
       saveCache();
       if (!state.dirty || (opts && opts.force)) render();
     } catch (e) {
-      if (getToken()) toast(errText(e));
+      toast(errText(e));
     } finally {
       state.loading = false;
       setSyncing(false);
@@ -342,13 +326,6 @@
     if (!b) return;
     if (on) { b.dataset.label = b.innerHTML; b.disabled = true; b.style.opacity = '.5'; }
     else { b.disabled = false; b.style.opacity = ''; }
-  }
-
-  function logout() {
-    lsSet(TOKEN_KEY, null);
-    lsSet(CACHE_KEY, null);
-    state.clients = []; state.weeks = {}; state.ready = false;
-    render();
   }
 
   /** 週の記録を部分更新（画面は先に変える。失敗したら戻す） */
@@ -433,7 +410,6 @@
     ok: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><path d="m7.5 12.3 3 3 6-6.6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     x: '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m2 2 8 8M10 2l-8 8"/></svg>',
     msg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.5c-5 0-9 3.2-9 7.2 0 3.6 3.2 6.6 7.5 7.1.3.1.7.2.8.5.1.2.1.6 0 .9l-.1.8c0 .2-.2.9.8.5s5.4-3.2 7.4-5.5c1.3-1.4 2-2.9 2-4.3 0-4-4-7.2-9-7.2z"/></svg>',
-    person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c.8-4 3.8-6.2 7.5-6.2s6.7 2.2 7.5 6.2"/></svg>',
   };
   const chev = `<span class="chev">${I.chev}</span>`;
 
@@ -442,7 +418,6 @@
     state.dirty = false;
     T = null;
     document.body.classList.remove('sheet-open');
-    if (!getToken()) return renderLogin();
     if (!state.ready) { $app.innerHTML = '<div class="loading"><span class="spin"></span></div>'; return; }
     const [a, b, c, d] = location.hash.replace(/^#\/?/, '').split('/');
     if (a === 'c' && b && c === 'w' && Number(d) >= 1 && Number(d) <= WEEKS) return renderWeekEdit(decodeURIComponent(b), Number(d));
@@ -544,34 +519,6 @@
     return `<button type="button" class="cell" data-act="sheet" data-id="${esc(c.id)}">
       <span class="cell-main"><span class="t b">${esc(san(c.name))}</span><span class="s">${esc(subLine(c))}</span></span>
       ${badge(iss)}${chev}</button>`;
-  }
-
-  // ================================================================ ログイン
-
-  function renderLogin(msg) {
-    $app.innerHTML = `
-      <section class="login"><form id="loginForm" autocomplete="on">
-        <div class="login-ic">${I.person}</div>
-        <h1>顧客管理</h1><p>畠山祐輔さん・関係者専用</p>
-        <input type="text" name="username" value="hatakeyama-kanri" autocomplete="username" hidden>
-        ${group('', `<label class="cell"><span class="lab">パスワード</span><input id="pw" type="password" name="password" autocomplete="current-password" placeholder="必須" required></label>`)}
-        ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
-        <div class="btns"><button class="btn filled" type="submit">ログイン</button></div>
-      </form></section>`;
-    const f = document.getElementById('loginForm');
-    f.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      const btn = f.querySelector('button[type=submit]');
-      btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
-      try {
-        const d = await api('login', { password: f.password.value });
-        lsSet(TOKEN_KEY, JSON.stringify({ token: d.token, exp: d.exp }));
-        state.ready = false;
-        render();
-        await refresh({ force: true });
-      } catch (e) { renderLogin(errText(e)); }
-    });
-    setTimeout(() => { const p = document.getElementById('pw'); if (p) p.focus(); }, 50);
   }
 
   // ================================================================ ホーム
@@ -780,7 +727,6 @@
           <button type="button" class="cell tint" data-act="backup"><span class="cell-main"><span class="t">バックアップを保存</span><span class="s">すべてのデータをファイルで保存します</span></span></button>`)}
         ${group('プラン', kv('内容', '3ヶ月（12週）完全オンライン') + kv('料金', '30万円（税込33万円）') + kv('支払い', '銀行振込・入金確認後に開始') + kv('初回', 'カウンセリング60分') + kv('継続', '個別相談'))}
         ${group('お客様との約束', kv('個別面談', '週1回60分×12回') + kv('身体評価', '開始時・4週・8週・12週') + kv('フォーム添削', '動画 週2本まで') + kv('食事記録の確認', '週3日分') + kv('週間レポート', '週1回') + kv('LINE返信', '原則2営業日以内'), '日曜・祝日はLINEの返信をしません。')}
-        ${group('', '<button type="button" class="cell danger center" data-act="logout"><span class="cell-main"><span class="t">ログアウト</span></span></button>')}
       </main>
       ${tabbar('menu')}`;
   }
@@ -1360,7 +1306,6 @@
     if (act === 'filter') { e.preventDefault(); ui.filter = el.dataset.v; ui.sheet = null; if (location.hash !== '#/clients') location.hash = '#/clients'; else keepScroll(render); return; }
     if (act === 'refresh') return refresh({ force: true });
     if (act === 'backup') return downloadBackup();
-    if (act === 'logout') { if (confirm('ログアウトしますか？')) logout(); return; }
 
     if (act.startsWith('tg-') && c) {
       const w = Number(el.dataset.w);
@@ -1470,13 +1415,12 @@
   let hiddenAt = 0;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { hiddenAt = Date.now(); return; }
-    if (getToken() && Date.now() - hiddenAt > 3 * 60 * 1000) refresh();
+    if (Date.now() - hiddenAt > 3 * 60 * 1000) refresh();
   });
 
   // ================================================================ 起動
 
   (function boot() {
-    if (!getToken()) { lsSet(CACHE_KEY, null); return render(); }
     try { const cached = JSON.parse(lsGet(CACHE_KEY) || 'null'); if (cached) setData(cached); } catch (_) { /* なくてもよい */ }
     render();
     refresh();
