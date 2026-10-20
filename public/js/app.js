@@ -446,6 +446,7 @@
     if (!state.ready) { $app.innerHTML = '<div class="loading"><span class="spin"></span></div>'; return; }
     const [a, b, c, d] = location.hash.replace(/^#\/?/, '').split('/');
     if (a === 'c' && b && c === 'w' && Number(d) >= 1 && Number(d) <= WEEKS) return renderWeekEdit(decodeURIComponent(b), Number(d));
+    if (a === 'c' && b && c === 'report') return renderReport(decodeURIComponent(b));
     if (a === 'c' && b) return renderDetail(decodeURIComponent(b));
     if (a === 'new') return renderNew();
     if (a === 'edit' && b) return renderEdit(decodeURIComponent(b));
@@ -507,6 +508,7 @@
       else out.push({ short: SHORT[x.kind], long: SHORT[x.kind], days: since(x.date), level: 'late' });
     }
     for (const x of tk.today) if (x.kind !== 'go') out.push({ short: SHORT[x.kind], long: SHORT[x.kind], level: 'today' });
+    if (c.renewIntent === '続けたい' && sched(c) && sched(c).cur >= 11) out.push({ short: '継続希望', long: '継続の希望', level: 'today' });
     if (!intake) out.push({ short: 'ヒアリング', long: 'ヒアリングの回答', level: 'info' });
     return out;
   }
@@ -615,6 +617,11 @@
         ${subs.length ? group('お客様から届いた', subs.map((x) => `<a class="cell" href="#/c/${encodeURIComponent(x.c.id)}">
             <span class="cell-main"><span class="t b">${esc(san(x.c.name))}</span><span class="s">${esc(x.text)}・${esc(dt(x.at))}</span></span><span class="badge new">新着</span>${chev}</a>`).join('')) : ''}
         ${need.length ? group(`対応が必要（${need.length}）`, need.map((x) => clientCell(x.c, x.iss)).join('')) : ''}
+        ${(() => {
+          const fol = state.clients.filter((c) => c.status === ST.ACTIVE).map((c) => ({ c, w: analyze(c).filter((x) => x.level === 'warn') })).filter((x) => x.w.length);
+          return fol.length ? group(`分析：フォローしたい人（${fol.length}）`, fol.map((x) => `<a class="cell" href="#/c/${encodeURIComponent(x.c.id)}">
+            <span class="cell-main"><span class="t b">${esc(san(x.c.name))}</span><span class="s">${esc(x.w.map((i) => i.title).join('・'))}</span></span>${chev}</a>`).join(''), 'チェックインの内容から自動で判定しています。') : '';
+        })()}
         ${fine.length ? group(`順調（${fine.length}）`, fine.map((x) => clientCell(x.c, x.iss)).join('')) : ''}
         ${state.clients.length ? '' : group('', '<div class="empty">まだお客様がいません。右上の＋から追加できます。</div>')}
       </main>
@@ -648,7 +655,8 @@
     const out = [
       { act: 'tg-checkin', w, done: !!r.checkinDone, label: 'チェックインを受け取った',
         sub: r.submittedAt ? `お客様から届いた（${dt(r.submittedAt)}）` : ci ? `予定 ${mdw(ci)}` : 'チェックイン曜日が未設定', late: !r.checkinDone && ci && ci < t },
-      { act: 'tg-meeting', w, done: !!r.meetingDate, label: '個別面談（60分）', sub: r.meetingDate ? `${mdwS(r.meetingDate)}に実施` : mt ? `予定 ${mdw(mt)}` : '今週中', late: !r.meetingDate && mt && mt < t },
+      { act: 'tg-meeting', w, done: !!r.meetingDate, label: '個別面談（60分）',
+        sub: r.meetingDate ? `${mdwS(r.meetingDate)}に実施` : `${mt ? `予定 ${mdw(mt)}` : '今週中'}${(rec(c.id, w - 1) || {}).nextMeeting ? `・希望「${(rec(c.id, w - 1) || {}).nextMeeting}」` : ''}`, late: !r.meetingDate && mt && mt < t },
       { act: 'tg-report', w, done: !!r.reportSent, label: '週間レポートを送った', sub: '振り返りと改善提案' },
     ];
     for (const ev of EVALS) {
@@ -699,6 +707,7 @@
         <div class="sheet-h"><div><h2>${esc(san(c.name))}</h2><p>${esc(subLine(c))}</p></div>
           <button type="button" class="xbtn" data-act="close-sheet" aria-label="閉じる">${I.x}</button></div>
         ${late ? `<div class="notice"><span class="ic">${I.warn}</span><div><b>遅れています</b><span>${esc(late)}</span></div></div>` : ''}
+        ${c.renewIntent ? `<div class="notice ok"><span class="ic">${I.ok}</span><div><b>継続の希望：${esc(c.renewIntent)}</b><span>お客様がチェックインで答えました。</span></div></div>` : ''}
         ${tasks ? group('やること', tasks) : ''}
         ${c.status === ST.WAIT ? '' : group('', kv('ヒアリング', c.intake && c.intake.submittedAt ? '回答済み' : '未回答', c.intake && c.intake.submittedAt ? 'ok-t' : 'late-t'))}
         <div class="btns">
@@ -802,7 +811,9 @@
         ${late ? `<div class="notice"><span class="ic">${I.warn}</span><div><b>遅れています</b><span>${esc(late)}</span></div></div>`
           : c.status === ST.ACTIVE && s && s.cur >= 1 ? `<div class="notice ok"><span class="ic">${I.ok}</span><div><b>順調です</b></div></div>` : ''}
 
-        ${tasks ? group(w ? `${w}週目のタスク` : 'タスク', tasks) : ''}
+        ${tasks ? group(w ? `${w}週目のタスク` : 'タスク', tasks + (w ? `<a class="cell" href="#/c/${encodeURIComponent(id)}/report"><span class="cell-main"><span class="t" style="color:var(--tint)">週間レポートの下書きを作る</span><span class="s">チェックインの内容から自動で作ります</span></span>${chev}</a>` : '')) : ''}
+        ${(() => { const ins = analyze(c); return ins.length ? group('分析', insightCells(ins), 'チェックインの内容から自動で判定しています。') : ''; })()}
+        ${compareGroup(c)}
         ${w ? group('今週の記録', `
           <div class="cell"><span class="cell-main"><span class="t">フォーム添削</span><span class="s">上限 ${FORM_MAX}本</span></span>
             <span class="val">${r.formVideos || 0}本</span>${stepper(c.id, w, 'formVideos', FORM_MAX)}</div>
@@ -852,6 +863,7 @@
       </main>
       ${tabbar('')}`;
     drawChart(c);
+    loadPhotos();
   }
 
   /** これまでの期間（更新前の12週） */
@@ -897,7 +909,10 @@
       if (!has && !(s && w === Math.min(s.cur, WEEKS))) continue;
       const rr = r || {};
       const n = scoreOf(rr);
-      const meta = [n == null ? '' : `チェックシート ${n}/7（${scoreLabel(n)}）`, rr.condition ? `体調 ${rr.condition}` : '', rr.meetingDate ? '面談✓' : '', rr.reportSent ? 'レポート✓' : ''].filter(Boolean).join('・');
+      const rt = rr.ratings || {};
+      const meta = [n == null ? '' : `チェックシート ${n}/7（${scoreLabel(n)}）`, rr.condition ? `体調 ${rr.condition}` : '',
+        Object.keys(rt).length ? Object.entries(rt).map(([k, v]) => `${RATE_L[k]}${v}`).join(' ') : '', rr.trainDays ? `トレーニング${rr.trainDays}日` : '',
+        rr.photos && Object.keys(rr.photos).length ? `写真${Object.keys(rr.photos).length}枚` : '', rr.meetingDate ? '面談✓' : '', rr.reportSent ? 'レポート✓' : ''].filter(Boolean).join('・');
       cells.push(`<a class="cell" href="#/c/${encodeURIComponent(c.id)}/w/${w}">
         <span class="cell-main"><span class="t b">${w}週目 <span style="font-weight:400;color:var(--label2);font-size:.88rem">${s ? `${md(weekStart(s, w))}〜${md(weekEnd(s, w))}` : ''}</span></span>
           ${meta ? `<span class="s">${esc(meta)}</span>` : '<span class="s">まだ記録がありません</span>'}
@@ -958,6 +973,196 @@
     });
   }
 
+  // ================================================================ 分析（ルールで自動判定）
+
+  const ADVICE = [
+    'トレーニングの予定を週のはじめにカレンダーに入れ、1回を短くしてでも回数を確保しましょう。',
+    '主要種目の回数と重量を毎回メモして、前回より1回か1kgだけ上を目指しましょう。',
+    '毎食、手のひら1枚分のタンパク質（肉・魚・卵・大豆）を入れることから始めましょう。',
+    '朝起きてトイレのあとに体重を測る、を習慣にしましょう。週3回以上が目安です。',
+    '寝る時間を固定して、寝る1時間前はスマホを控えましょう。',
+    '外食の翌日は、いつもの食事に戻すことだけ意識しましょう。1回で結果は変わりません。',
+    '月に1回、同じ場所・同じ服で写真を撮って比べましょう。',
+  ];
+  const RATE_L = { train: 'トレーニング', diet: '食事', sleep: '睡眠', energy: '元気' };
+  const sign = (v, d = 1) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(d);
+
+  /** 目標の文章から「−6kg」「6kg減」などを読み取る（読めなければ null） */
+  function goalDelta(goal) {
+    const g = String(goal || '');
+    let m = /(?:[−\-ー－]|マイナス)\s*(\d+(?:\.\d+)?)\s*(?:kg|キロ)/i.exec(g);
+    if (m) return -Number(m[1]);
+    m = /(\d+(?:\.\d+)?)\s*(?:kg|キロ)\s*(?:減|落|痩|やせ)/i.exec(g);
+    return m ? -Number(m[1]) : null;
+  }
+
+  /** level: warn（フォローしたい）/ good（良い）/ info */
+  function analyze(c) {
+    const s = sched(c);
+    const out = [];
+    if (c.status !== ST.ACTIVE || !s || s.cur < 1) return out;
+    const last = Math.min(s.cur, WEEKS);
+    const W = [];
+    for (let w = 1; w <= last; w++) W.push({ w, r: rec(c.id, w) });
+    const kgs = W.map((x) => ({ w: x.w, v: avgW(x.r) })).filter((x) => x.v != null);
+
+    if (kgs.length >= 2) {
+      const a = kgs[0], b = kgs[kgs.length - 1];
+      const per = (b.v - a.v) / (b.w - a.w);
+      const proj = a.v + per * (WEEKS - a.w);
+      const g = goalDelta(c.goal || (c.intake && c.intake.answers && c.intake.answers.goal_12w));
+      let txt = `週あたり ${sign(per, 2)}kg。このペースなら12週目は約${proj.toFixed(1)}kg（${sign(proj - a.v)}kg）。`;
+      if (g != null) txt += (proj - a.v) <= g ? `目標（${sign(g, 0)}kg）に届く見込みです。` : `目標（${sign(g, 0)}kg）には届かない見込みです。`;
+      out.push({ level: g != null && (proj - a.v) > g ? 'warn' : 'info', title: '体重のペース', text: txt });
+      const p2 = kgs[kgs.length - 2];
+      const wk = (b.v - p2.v) / (b.w - p2.w);
+      if (wk < -0.01 * p2.v) out.push({ level: 'warn', title: '減るのが速すぎます', text: `直近は週${sign(wk)}kg（体重の1%超）。筋肉が落ちないよう、食事量とタンパク質を確認してください。` });
+      if (kgs.length >= 3) {
+        const l3 = kgs.slice(-3).map((x) => x.v);
+        if (Math.max(...l3) - Math.min(...l3) <= 0.2) out.push({ level: 'warn', title: '体重が停滞しています', text: '3週続けて、週平均の変化が0.2kg以内です。食事記録とトレーニング量を見直すタイミングです。' });
+      }
+    }
+
+    const scored = W.filter((x) => hasScore(x.r));
+    const recent = scored.slice(-4);
+    if (recent.length >= 2) {
+      const miss = CHECK_ITEMS.map((_, i) => recent.filter((x) => x.r.checks[i] !== '1').length);
+      const worst = miss.indexOf(Math.max(...miss));
+      if (miss[worst] >= Math.ceil(recent.length / 2)) {
+        out.push({ level: 'info', title: `抜けやすい項目：${CHECK_ITEMS[worst]}`, text: `直近${recent.length}週のうち${miss[worst]}週でできていません。${ADVICE[worst]}`, advice: worst });
+      }
+    }
+    const lastScores = scored.slice(-2).map((x) => scoreOf(x.r));
+    if (lastScores.length === 2 && lastScores.every((n) => n <= 2)) out.push({ level: 'warn', title: 'チェックシートが2週続けて低い', text: '計画をシンプルにするタイミングです。やることを1つに絞って伝えましょう。' });
+    if (scored.length >= 3 && scored.slice(-3).every((x) => scoreOf(x.r) >= 5)) out.push({ level: 'good', title: '3週連続で「継続」', text: 'うまく回っています。週間レポートでしっかりほめましょう。' });
+
+    const rated = W.filter((x) => x.r && x.r.ratings && Object.keys(x.r.ratings).length);
+    if (rated.length) {
+      const lr = rated[rated.length - 1].r.ratings;
+      const pr = rated.length >= 2 ? rated[rated.length - 2].r.ratings : null;
+      for (const k of ['sleep', 'energy', 'diet', 'train']) {
+        if (lr[k] && lr[k] <= 2) {
+          out.push({ level: 'warn', title: `${RATE_L[k]}の自己評価が低い（${lr[k]}/5）`,
+            text: k === 'sleep' || k === 'energy' ? '疲れがたまっている可能性があります。トレーニング量を少し下げる、睡眠を優先するなどを提案しましょう。' : '何がうまくいかなかったか、面談で聞いてみましょう。' });
+        } else if (pr && lr[k] && pr[k] && pr[k] - lr[k] >= 2) {
+          out.push({ level: 'warn', title: `${RATE_L[k]}の自己評価が下がりました（${pr[k]}→${lr[k]}）`, text: '先週から大きく下がっています。理由を聞いてみましょう。' });
+        }
+      }
+    }
+    const conds = W.filter((x) => x.r && x.r.condition).slice(-2);
+    if (conds.length === 2 && conds.every((x) => x.r.condition === 'いまいち')) out.push({ level: 'warn', title: '体調「いまいち」が2週続いています', text: '無理をさせていないか確認しましょう。' });
+
+    const due = W.filter((x) => (dowInWeek(s, x.w, c.checkinDow) || weekEnd(s, x.w)) < today());
+    if (due.length >= 2) {
+      const sub = due.filter((x) => x.r && (x.r.submittedAt || x.r.checkinDone)).length; // LINEで受け取って済にした週も数える
+      if (sub / due.length < 0.6) out.push({ level: 'warn', title: `チェックインの提出が少なめ（${sub}/${due.length}週）`, text: '提出しやすいよう、チェックイン曜日の前日にLINEで一声かけましょう。' });
+    }
+    if (c.renewIntent) {
+      out.push({ level: c.renewIntent === '今回で終了' ? 'info' : 'good', title: `継続の希望：${c.renewIntent}`,
+        text: c.renewIntent === '続けたい' ? '最終評価で次の12週の提案をしましょう。' : c.renewIntent === '相談したい' ? '最終評価で一緒に決めましょう。' : '最終評価で、これからの過ごし方を伝えましょう。' });
+    }
+    return out;
+  }
+  function insightCells(list) {
+    const ic = { warn: `<span class="ins warn">${I.warn}</span>`, good: `<span class="ins good">${I.ok}</span>`, info: '<span class="ins info"><i></i></span>' };
+    return list.map((x) => `<div class="cell"><span style="align-self:flex-start;margin-top:2px">${ic[x.level]}</span><span class="cell-main"><span class="t b">${esc(x.title)}</span><span class="s">${esc(x.text)}</span></span></div>`).join('');
+  }
+
+  // ================================================================ 週間レポートの下書き
+
+  function reportDraft(c, w) {
+    const r = rec(c.id, w) || {};
+    const pr = w > 1 ? rec(c.id, w - 1) : null;
+    const a = avgW(r), b = avgW(pr);
+    const n = scoreOf(r);
+    const ins = analyze(c);
+    const lines = [san(c.name), `${w}週目の週間レポートです。`, '', '【今週の結果】'];
+    if (a != null) lines.push(`・週平均体重：${a.toFixed(1)}kg${b != null ? `（先週比 ${sign(a - b)}kg）` : ''}`);
+    if (n != null) lines.push(`・チェックシート：${n}/7（${scoreLabel(n)}）`);
+    if (r.trainDays) lines.push(`・トレーニング：${r.trainDays}日`);
+    if (lines[lines.length - 1] === '【今週の結果】') lines.push('・（ここに今週の数字）');
+    lines.push('', '【よかったこと】');
+    const goods = [];
+    if (r.clientWin) goods.push(r.clientWin);
+    if (hasScore(r)) CHECK_ITEMS.forEach((t, i) => { if (r.checks[i] === '1' && goods.length < 3) goods.push(t); });
+    lines.push(...(goods.length ? goods : ['（ここに今週よかった点）']).map((x) => '・' + x));
+    lines.push('', '【改善提案】');
+    const before = lines.length;
+    if (n != null && n <= 2) lines.push('・来週は計画をシンプルにして、まず1つだけ続けましょう。');
+    const weak = ins.find((x) => x.advice != null);
+    if (weak) lines.push('・' + ADVICE[weak.advice]);
+    else if (hasScore(r)) { const i = r.checks.indexOf('0'); if (i >= 0) lines.push('・' + ADVICE[i]); }
+    if (lines.length === before) lines.push('・（ここに来週の改善点）');
+    if (r.clientNote) lines.push('', '【ご質問へのお返事】', `「${r.clientNote}」`, '→ ');
+    lines.push('', '来週も一緒にがんばりましょう。', '畠山');
+    return lines.join('\n');
+  }
+
+  function renderReport(id) {
+    const c = state.clients.find((x) => x.id === id);
+    const s = c && sched(c);
+    if (!c || !s || s.cur < 1) { location.hash = c ? '#/c/' + encodeURIComponent(id) : '#/'; return; }
+    const w = Math.min(s.cur, WEEKS);
+    const r = rec(c.id, w) || {};
+    $app.innerHTML = `
+      ${navbar({ title: '週間レポート', back: '#/c/' + encodeURIComponent(id), backLabel: '戻る', solid: true })}
+      <main class="page">
+        ${largeTitle('週間レポート', '', `${w}週目。チェックインの内容から下書きを作りました。直してから送ってください。`)}
+        ${group('', `<div class="cell"><textarea id="draft" rows="18" aria-label="週間レポート">${esc(reportDraft(c, w))}</textarea></div>`)}
+        <div class="btns">
+          <a class="btn line" id="sendReport" href="#" target="_blank" rel="noopener noreferrer">${I.msg}LINEで送る</a>
+          <button class="btn gray" type="button" id="copyReport">コピー</button>
+        </div>
+        ${group('', kv('この週のレポート', r.reportSent ? '送付済み' : 'まだ', r.reportSent ? 'ok-t' : ''), '「LINEで送る」を押すと、この週の週間レポートを自動で済にします。')}
+      </main>`;
+    const ta = document.getElementById('draft');
+    const send = document.getElementById('sendReport');
+    const sync = () => { send.href = lineHref(ta.value); };
+    ta.addEventListener('input', () => { state.dirty = true; sync(); });
+    sync();
+    send.addEventListener('click', async () => {
+      if ((rec(c.id, w) || {}).reportSent) return;
+      try {
+        await patchWeek(c.id, w, { reportSent: true });
+        toast('週間レポートを済にしました', async () => { try { await patchWeek(c.id, w, { reportSent: false }); } catch (_) { /* toast 済 */ } });
+      } catch (_) { /* toast 済 */ }
+    });
+    document.getElementById('copyReport').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(ta.value); toast('コピーしました'); } catch (_) { ta.select(); toast('文章を選択しました'); }
+    });
+  }
+
+  // ================================================================ 写真
+
+  const photoCache = {};
+  async function loadPhotos(root) {
+    for (const img of (root || document).querySelectorAll('img[data-path]')) {
+      const p = img.dataset.path;
+      try {
+        if (!photoCache[p]) photoCache[p] = (await api('getPhoto', { path: p })).data;
+        if (img.isConnected) { img.src = photoCache[p]; img.classList.add('ld'); }
+      } catch (_) { img.alt = '読み込めませんでした'; img.classList.add('ld'); }
+    }
+  }
+  const SLOT_L = { front: '正面', side: '横', back: '後ろ' };
+  function photoGrid(photos) {
+    const ks = ['front', 'side', 'back'].filter((k) => photos && photos[k]);
+    if (!ks.length) return '';
+    return `<div class="phgrid">${ks.map((k) => `<button type="button" class="ph" data-act="zoom"><img data-path="${esc(photos[k])}" alt="${SLOT_L[k]}"><span>${SLOT_L[k]}</span></button>`).join('')}</div>`;
+  }
+  /** 最初の写真と最新の写真を並べる */
+  function compareGroup(c) {
+    const ws = [];
+    for (let w = 1; w <= WEEKS; w++) { const r = rec(c.id, w); if (r && r.photos && Object.keys(r.photos).length) ws.push({ w, p: r.photos }); }
+    if (ws.length < 2) return '';
+    const a = ws[0], b = ws[ws.length - 1];
+    const slot = ['front', 'side', 'back'].find((k) => a.p[k] && b.p[k]);
+    if (!slot) return '';
+    return group(`写真の比較（${SLOT_L[slot]}）`, `<div class="cell"><div class="cmp">
+      <button type="button" class="ph" data-act="zoom"><img data-path="${esc(a.p[slot])}" alt="${a.w}週目"><span>${a.w}週目</span></button>
+      <button type="button" class="ph" data-act="zoom"><img data-path="${esc(b.p[slot])}" alt="${b.w}週目"><span>${b.w}週目</span></button></div></div>`);
+  }
+
   // ================================================================ 週の記録
 
   function renderWeekEdit(id, w) {
@@ -969,11 +1174,18 @@
     while (weights.length < 3) weights.push('');
     const checks = (r.checks || '').padEnd(7, '0');
     $app.innerHTML = `
-      ${navbar({ title: `${w}週目`, back: '#/c/' + encodeURIComponent(id), backLabel: san(c.name).slice(0, 8), solid: true })}
+      ${navbar({ title: `${w}週目`, back: '#/c/' + encodeURIComponent(id), backLabel: '戻る', solid: true })}
       <main class="page">
         ${largeTitle(`${w}週目の記録`, '', s ? `${md(weekStart(s, w))}〜${md(weekEnd(s, w))}` : '')}
+        ${r.photos && Object.keys(r.photos).length ? group('写真', `<div class="cell">${photoGrid(r.photos)}</div>`, 'タップすると大きく表示します。') : ''}
         ${r.submittedAt ? group(`お客様から届いた（${esc(dt(r.submittedAt))}）`, [
           r.condition ? kv('体調', esc(r.condition)) : '',
+          r.ratings && Object.keys(r.ratings).length ? kv('自己評価', Object.entries(r.ratings).map(([k, v]) => `${RATE_L[k]} ${'●'.repeat(v)}${'○'.repeat(5 - v)}`).join('<br>')) : '',
+          r.trainDays || r.mealsSent || r.videosSent ? kv('回数', `トレーニング ${r.trainDays || 0}日・食事記録 ${r.mealsSent || 0}日・動画 ${r.videosSent || 0}本`) : '',
+          r.measures && Object.keys(r.measures).length ? kv('サイズ', [r.measures.waist ? `ウエスト ${r.measures.waist}cm` : '', r.measures.hip ? `ヒップ ${r.measures.hip}cm` : '', r.measures.bodyFat ? `体脂肪率 ${r.measures.bodyFat}%` : ''].filter(Boolean).join('<br>')) : '',
+          r.nextMeeting ? kv('来週の面談の希望', esc(r.nextMeeting)) : '',
+          r.reflection ? `<div class="cell"><span class="cell-main"><span class="s">12週間をふり返って</span><span class="t">${esc(r.reflection)}</span></span></div>` : '',
+          r.renewIntent ? kv('継続の希望', esc(r.renewIntent), 'strong') : '',
           r.clientWin ? `<div class="cell"><span class="cell-main"><span class="s">うまくいったこと</span><span class="t">${esc(r.clientWin)}</span></span></div>` : '',
           r.clientNote ? `<div class="cell"><span class="cell-main"><span class="s">困っていること・質問</span><span class="t">${esc(r.clientNote)}</span></span></div>` : '',
         ].join('') || kv('内容', '体重とチェックシート'), '体重とチェックシートは下に反映済みです。') : ''}
@@ -995,6 +1207,7 @@
       </main>
       ${tabbar('')}`;
     bindWeekForm(c, w);
+    loadPhotos();
   }
 
   function bindWeekForm(c, w) {
@@ -1131,6 +1344,16 @@
     const cid = el.dataset.id || decodeURIComponent((location.hash.split('/')[2] || ''));
     const c = state.clients.find((x) => x.id === cid);
 
+    if (act === 'zoom') {
+      const img = el.querySelector('img');
+      if (!img || !img.src) return;
+      const box = document.createElement('div');
+      box.className = 'lightbox';
+      box.innerHTML = `<img src="${img.src}" alt="${esc(img.alt)}"><button type="button" class="xbtn" aria-label="閉じる">${I.x}</button>`;
+      box.addEventListener('click', () => box.remove());
+      document.body.appendChild(box);
+      return;
+    }
     if (act === 'sheet') { ui.sheet = el.dataset.id; return keepScroll(render); }
     if (act === 'close-sheet') { ui.sheet = null; return keepScroll(render); }
     if (act === 'filter') { e.preventDefault(); ui.filter = el.dataset.v; ui.sheet = null; if (location.hash !== '#/clients') location.hash = '#/clients'; else keepScroll(render); return; }

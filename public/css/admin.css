@@ -288,3 +288,20 @@ details.cell .qa { padding: 0 16px 14px; }
 .toast button { color: var(--tint); font-weight: 600; padding: 6px 8px; min-height: 36px; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+/* 分析 */
+.ins { display: grid; place-items: center; width: 22px; height: 22px; }
+.ins svg { width: 22px; height: 22px; }
+.ins.warn { color: var(--brown); }
+.ins.good { color: var(--green); }
+.ins.info i { width: 9px; height: 9px; border-radius: 50%; background: var(--tint); }
+/* 写真 */
+.phgrid, .cmp { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cmp { grid-template-columns: 1fr 1fr; }
+.ph { display: flex; flex-direction: column; gap: 4px; align-items: center; font-size: .76rem; color: var(--label2); }
+.ph img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--fill); }
+.ph img:not(.ld) { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .5; } }
+.lightbox { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, .92); display: grid; place-items: center; animation: fade .2s; }
+.lightbox img { max-width: 100vw; max-height: 100vh; object-fit: contain; }
+.lightbox .xbtn { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 16px; background: rgba(255, 255, 255, .2); color: #fff; }

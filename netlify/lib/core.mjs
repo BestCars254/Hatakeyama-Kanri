@@ -4,6 +4,7 @@
  * 保存先：Netlify Blobs（ストア名 "kanri"）
  *   c/{id}        … お客様1人分 { client, weeks: { [週番号]: 記録 } }
  *   k/{formKey}   … お客様用リンクの鍵 → { clientId }
+ *   p/{clientId}/{期}/{週}/{front|side|back} … チェックインの写真（JPEG）
  *   _auth/fails   … ログイン失敗の回数
  *
  * 環境変数（Netlify のサイト設定 → Environment variables）
@@ -30,8 +31,16 @@ const WEEK_FIELDS = {
   reportSent: 'bool', memo: 'text',
 };
 // お客様がリンクから送る週次チェックイン
-const CHECKIN_FIELDS = { weights: 'weights', checks: 'checks', condition: 'condition', clientWin: 'text', clientNote: 'text' };
+const CHECKIN_FIELDS = {
+  weights: 'weights', checks: 'checks', condition: 'condition', clientWin: 'text', clientNote: 'text',
+  ratings: 'ratings', trainDays: 'int7', mealsSent: 'int7', videosSent: 'int2', nextMeeting: 'text', measures: 'measures',
+  reflection: 'text', renewIntent: 'renew',
+};
 const CONDITIONS = ['', '良い', '普通', 'いまいち'];
+const RATING_KEYS = ['train', 'diet', 'sleep', 'energy'];
+const RENEW = ['', '続けたい', '相談したい', '今回で終了'];
+const PHOTO_SLOTS = ['front', 'side', 'back'];
+const PHOTO_MAX = 1.5 * 1024 * 1024; // 1枚あたり（端末で縮小してから送る）
 const EMPTY_CLIENT = {
   name: '', lineName: '', goal: '', startDate: '', paidDate: '', checkinDow: '', meetingDow: '',
   status: '入金待ち', memo: '', eval0: '', eval4: '', eval8: '', eval12: '', finalDone: '', finalPlan: '',
@@ -39,6 +48,7 @@ const EMPTY_CLIENT = {
 const EMPTY_WEEK = {
   weights: [], checks: '', checkinDone: false, meetingDate: '', formVideos: 0, mealDays: 0, reportSent: false, memo: '',
   condition: '', clientWin: '', clientNote: '', submittedAt: '',
+  ratings: {}, trainDays: 0, mealsSent: 0, videosSent: 0, nextMeeting: '', measures: {}, reflection: '', renewIntent: '', photos: {},
 };
 const TZ_OFFSET_MS = 9 * 3600000; // 週の判定は日本時間
 
@@ -60,6 +70,7 @@ export async function handle(body, ctx) {
       case 'formGet':           return await formGet(body.key, ctx.store);
       case 'formIntake':        return await formIntake(body.key, body.answers, ctx.store);
       case 'formCheckin':       return await formCheckin(body.key, body.checkin, ctx.store);
+      case 'formPhoto':         return await formPhoto(body.key, body.week, body.slot, body.data, ctx.store);
     }
 
     if (!verifyToken(body.token, ctx.env.TOKEN_SECRET)) return { ok: false, error: 'unauthorized' };
@@ -71,6 +82,7 @@ export async function handle(body, ctx) {
       case 'saveWeek':     return await saveWeek(body.week, ctx.store);
       case 'issueFormKey': return await issueFormKey(body.id, ctx.store);
       case 'renewClient':  return await renewClient(body.id, body.paidDate, ctx.store);
+      case 'getPhoto':     return await getPhoto(body.path, ctx.store);
       default:             throw new ApiError('bad_request');
     }
   } catch (err) {
@@ -159,6 +171,8 @@ async function deleteClient(id, store) {
   if (!id) throw new ApiError('bad_request');
   const doc = await store.get('c/' + id, { type: 'json' });
   if (doc && doc.client && doc.client.formKey) await store.delete('k/' + doc.client.formKey);
+  const { blobs } = await store.list({ prefix: `p/${id}/` });
+  await Promise.all(blobs.map((b) => store.delete(b.key)));
   await store.delete('c/' + id);
   return { ok: true };
 }
@@ -252,7 +266,8 @@ async function formGet(key, store) {
   const weeks = {};
   for (const [n, w] of Object.entries(doc.weeks || {})) {
     if (!w.submittedAt) continue;
-    weeks[n] = { weights: w.weights, checks: w.checks, condition: w.condition, clientWin: w.clientWin, clientNote: w.clientNote, submittedAt: w.submittedAt };
+    weeks[n] = { submittedAt: w.submittedAt, photos: Object.keys(w.photos || {}) };
+    for (const f of Object.keys(CHECKIN_FIELDS)) weeks[n][f] = w[f];
   }
   return {
     ok: true,
@@ -293,10 +308,52 @@ async function formCheckin(key, input, store) {
     if (!cur) throw new ApiError('not_started');
     if (week > Math.min(cur, 12)) throw new ApiError('bad_request'); // 先の週には出せない
     d.weeks = d.weeks || {};
-    d.weeks[week] = { clientId: id, week, ...EMPTY_WEEK, ...d.weeks[week], ...patch, checkinDone: true, submittedAt: now, updatedAt: now };
+    const prev = { ...EMPTY_WEEK, ...d.weeks[week] };
+    const next = { clientId: id, week, ...prev, ...patch, checkinDone: true, submittedAt: now, updatedAt: now };
+    // お客様の申告で、畠山さんがまだ入れていない数を埋める（入力済みなら上書きしない）
+    if (!prev.formVideos && patch.videosSent) next.formVideos = patch.videosSent;
+    if (!prev.mealDays && patch.mealsSent) next.mealDays = patch.mealsSent;
+    d.weeks[week] = next;
+    if (patch.renewIntent) d.client = { ...d.client, renewIntent: patch.renewIntent, renewIntentAt: now, updatedAt: now };
     return d;
   });
   return { ok: true, submittedAt: doc.weeks[week].submittedAt };
+}
+
+/** チェックインの写真を1枚保存（同じ枠は上書き） */
+async function formPhoto(key, weekIn, slot, data, store) {
+  const id = await clientIdByKey(key, store);
+  const week = cast('week', weekIn);
+  if (!PHOTO_SLOTS.includes(slot) || typeof data !== 'string') throw new ApiError('bad_request');
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(data);
+  if (!m) throw new ApiError('bad_request');
+  const buf = Buffer.from(m[1], 'base64');
+  if (buf.length > PHOTO_MAX || buf[0] !== 0xff || buf[1] !== 0xd8) throw new ApiError('bad_request'); // JPEG のみ
+  const cur0 = await store.get('c/' + id, { type: 'json' });
+  if (!cur0 || cur0.client.formKey !== key) throw new ApiError('invalid_link');
+  const cur = currentWeek(cur0.client.startDate);
+  if (!cur) throw new ApiError('not_started');
+  if (week > Math.min(cur, 12)) throw new ApiError('bad_request');
+  const cycle = (Array.isArray(cur0.client.cycles) ? cur0.client.cycles.length : 0) + 1;
+  const path = `p/${id}/${cycle}/${week}/${slot}`;
+  await store.set(path, buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length), { metadata: { type: 'image/jpeg' } });
+  await update(store, id, (d) => {
+    d.weeks = d.weeks || {};
+    const w = { clientId: id, week, ...EMPTY_WEEK, ...d.weeks[week] };
+    w.photos = { ...(w.photos || {}), [slot]: path };
+    w.updatedAt = new Date().toISOString();
+    d.weeks[week] = w;
+    return d;
+  });
+  return { ok: true, slot };
+}
+
+/** 管理画面から写真を見る（ログイン必須） */
+async function getPhoto(path, store) {
+  if (typeof path !== 'string' || !/^p\/[A-Za-z0-9_-]{1,64}\/\d{1,3}\/\d{1,2}\/(front|side|back)$/.test(path)) throw new ApiError('bad_request');
+  const buf = await store.get(path, { type: 'arrayBuffer' });
+  if (!buf) throw new ApiError('not_found');
+  return { ok: true, data: 'data:image/jpeg;base64,' + Buffer.from(buf).toString('base64') };
 }
 
 /** ヒアリング回答：キーと長さを制限して保存する */
@@ -362,6 +419,22 @@ function cast(type, v) {
       const n = Number(v);
       if (!Number.isInteger(n) || n < 1 || n > 12) throw new ApiError('bad_request');
       return n;
+    }
+    case 'int7': return Math.max(0, Math.min(7, Math.floor(Number(v) || 0)));
+    case 'int2': return Math.max(0, Math.min(2, Math.floor(Number(v) || 0)));
+    case 'renew':
+      if (!RENEW.includes(String(v))) throw new ApiError('bad_request');
+      return String(v);
+    case 'ratings': {
+      const out = {};
+      if (v && typeof v === 'object') for (const k of RATING_KEYS) { const n = Math.floor(Number(v[k])); if (n >= 1 && n <= 5) out[k] = n; }
+      return out;
+    }
+    case 'measures': {
+      const out = {};
+      const lim = { waist: [30, 250], hip: [30, 250], bodyFat: [2, 70] };
+      if (v && typeof v === 'object') for (const [k, [lo, hi]] of Object.entries(lim)) { const n = Number(v[k]); if (v[k] !== '' && v[k] != null && Number.isFinite(n) && n >= lo && n <= hi) out[k] = Math.round(n * 10) / 10; }
+      return out;
     }
     case 'condition':
       if (!CONDITIONS.includes(String(v))) throw new ApiError('bad_request');

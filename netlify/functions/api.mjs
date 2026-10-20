@@ -1,7 +1,7 @@
 import { getStore } from '@netlify/blobs';
 import { handle } from '../lib/core.mjs';
 
-const MAX_BODY = 200 * 1024;
+const MAX_BODY = 2.5 * 1024 * 1024; // 写真1枚（端末で縮小済み）を送れる大きさ
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status,
