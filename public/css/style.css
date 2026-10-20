@@ -398,3 +398,5 @@ body.client .actions { position: static; }
 .meas label { display: grid; grid-template-columns: 6em 1fr auto; align-items: center; gap: 8px; font-size: 14px; }
 .meas input { margin-top: 0 !important; }
 .meas em { font-style: normal; color: var(--muted); }
+
+.f-applink { color: var(--primary); font-weight: 600; }

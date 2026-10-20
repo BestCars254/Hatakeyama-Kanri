@@ -678,6 +678,8 @@
 
   // ---------- LINE ----------
   function formUrl(c) { return `${location.origin}/form.html#${c.formKey}`; }
+  function appUrl(c) { return `${location.origin}/app.html#${c.formKey}`; }
+  function msgApp(c) { return `${san(c.name)}\nあなた専用のプランのページです。\n${appUrl(c)}\n\nトレーニングの内容はここで確認できます。ホーム画面に追加しておくと便利です（共有ボタン →「ホーム画面に追加」）。`; }
   function msgIntake(c) {
     const head0 = c.paidDate ? 'ご入金を確認しました。ありがとうございます。' : 'このたびはお申し込みありがとうございます。';
     return `${san(c.name)}\n${head0}畠山です。\n\n開始前に、こちらの事前ヒアリングにご回答をお願いします（5分ほど）。\n${formUrl(c)}\n\nこのリンクは、開始後の毎週のチェックインにも使います。ブックマークしておいてください。`;
@@ -821,7 +823,9 @@
             <span class="val">${r.mealDays || 0}日</span>${stepper(c.id, w, 'mealDays', 7)}</div>`) : ''}
 
         <section class="group"><h2 class="gh">お客様に送る</h2>
-          ${c.formKey ? `<div class="list"><a class="cell" href="${formUrl(c)}" target="_blank" rel="noopener noreferrer"><span class="cell-main"><span class="t tint-t" style="color:var(--tint)">お客様用ページを開く</span><span class="s">${esc(formUrl(c).replace(/^https?:\/\//, ''))}</span></span>${chev}</a>
+          ${c.formKey ? `<div class="list"><a class="cell" href="${appUrl(c)}" target="_blank" rel="noopener noreferrer"><span class="cell-main"><span class="t" style="color:var(--tint)">お客様アプリ（プラン）を開く・編集</span><span class="s">${c.plan && c.plan.updatedAt ? `${dt(c.plan.updatedAt)}に更新` : 'まだ中身がありません。開いて「編集」から作れます'}</span></span>${chev}</a>
+            ${c.plan && c.plan.updatedAt ? `<a class="cell" href="${lineHref(msgApp(c))}" target="_blank" rel="noopener noreferrer"><span class="cell-main"><span class="t" style="color:var(--tint)">お客様アプリをLINEで送る</span></span>${chev}</a>` : ''}
+            <a class="cell" href="${formUrl(c)}" target="_blank" rel="noopener noreferrer"><span class="cell-main"><span class="t tint-t" style="color:var(--tint)">ヒアリング・チェックインのページを開く</span><span class="s">${esc(formUrl(c).replace(/^https?:\/\//, ''))}</span></span>${chev}</a>
             ${intake && c.status === ST.ACTIVE ? `<a class="cell" href="${lineHref(msgIntake(c))}" target="_blank" rel="noopener noreferrer"><span class="cell-main"><span class="t" style="color:var(--tint)">ヒアリングをもう一度送る</span></span>${chev}</a>` : ''}</div>
             <div class="btns"><a class="btn line" href="${lineHref(m.text)}" target="_blank" rel="noopener noreferrer">${I.msg}${m.label}</a></div>`
             : `<div class="list"><button class="cell tint" type="button" data-act="issuekey"><span class="cell-main"><span class="t">お客様用リンクを作る</span></span></button></div>`}
