@@ -6,7 +6,7 @@
 
   const API_URL = '/api';
   const COACH = '畠山';
-  const WEEKS = 12;
+  let WEEKS = 12; // 期間（お客様ごと。読み込み後にサーバーの値で置き換える）
   const DOW = ['日', '月', '火', '水', '木', '金', '土'];
   const Q = window.INTAKE;
   const CHECK_ITEMS = window.CHECK_ITEMS;
@@ -46,7 +46,7 @@
   }[e && e.message] || 'エラーが発生しました。時間をおいてもう一度お試しください。');
 
   function header(sub) {
-    return `<header class="f-head"><div class="f-brand">${COACH}祐輔｜12週間オンラインコーチング</div>${sub ? `<h1>${esc(sub)}</h1>` : ''}</header>`;
+    return `<header class="f-head"><div class="f-brand">${COACH}祐輔｜${WEEKS}週間オンラインコーチング</div>${sub ? `<h1>${esc(sub)}</h1>` : ''}</header>`;
   }
   function fatal(msg) { $app.innerHTML = header('') + `<div class="err" style="margin-top:24px">${esc(msg)}</div>`; }
 
@@ -170,7 +170,11 @@
 
   const RATINGS = [['train', 'トレーニング'], ['diet', '食事'], ['sleep', '睡眠'], ['energy', '元気・やる気']];
   const SLOTS = [['front', '正面'], ['side', '横'], ['back', '後ろ']];
-  const EVAL_WEEKS = [1, 4, 8, 12];
+  /** サイズを測る週：開始・期間の1/3・2/3・最終週（12週なら 1・4・8・12週。管理画面の身体評価と同じ） */
+  function evalWeeks() {
+    const a = Math.max(2, Math.round(WEEKS / 3)), b = Math.max(a + 1, Math.round(WEEKS * 2 / 3));
+    return [1, a, b, WEEKS];
+  }
 
   /** 写真を端末で縮小して JPEG にする（長い辺 1280px） */
   async function compress(file) {
@@ -226,7 +230,7 @@
       ${header('毎週のチェックイン')}
       <section class="f-intro">
         <p>${esc(c.name)}さん、今週もおつかれさまです。</p>
-        <p>${cur > WEEKS ? '12週間のプログラムは終了しました。最終週の記録はこちらから送れます。' : `今日は <b>12週間のうち${cur}週目</b> です。`}${ciDow != null && cur <= WEEKS ? `チェックインは毎週${DOW[ciDow]}曜日が目安です。` : ''}</p>
+        <p>${cur > WEEKS ? `${WEEKS}週間のプログラムは終了しました。最終週の記録はこちらから送れます。` : `今日は <b>${WEEKS}週間のうち${cur}週目</b> です。`}${ciDow != null && cur <= WEEKS ? `チェックインは毎週${DOW[ciDow]}曜日が目安です。` : ''}</p>
         <p class="muted">所要時間の目安：3分。体調以外は、分かる範囲で大丈夫です。</p>
       </section>
       <div class="week-tabs f-weeks">${tabs.join('')}</div>
@@ -259,7 +263,7 @@
           ${q('今週の体調', `<div class="f-opts f-inline">${['良い', '普通', 'いまいち'].map((o) => `<label class="f-opt"><input type="radio" name="condition" value="${o}"${prev.condition === o ? ' checked' : ''}><span>${o}</span></label>`).join('')}</div>`,
             { id: 'condition', req: true, miss: '体調を選んでください' })}
 
-          ${EVAL_WEEKS.includes(w) ? q('サイズの測定（任意）', `<div class="meas">
+          ${evalWeeks().includes(w) ? q('サイズの測定（任意）', `<div class="meas">
               <label><span>ウエスト</span><input type="text" inputmode="decimal" name="m_waist" value="${esc(measures.waist || '')}"><em>cm</em></label>
               <label><span>ヒップ</span><input type="text" inputmode="decimal" name="m_hip" value="${esc(measures.hip || '')}"><em>cm</em></label>
               <label><span>体脂肪率</span><input type="text" inputmode="decimal" name="m_bodyFat" value="${esc(measures.bodyFat || '')}"><em>%</em></label></div>`,
@@ -269,8 +273,8 @@
           ${q(`困っていること・${COACH}への質問`, `<textarea name="clientNote" rows="3">${esc(prev.clientNote || '')}</textarea>`, { help: '週間レポートでお返事します。急ぎの内容はLINEでご連絡ください。' })}
           ${w < WEEKS ? q('来週の面談の希望日時', `<input type="text" name="nextMeeting" value="${esc(prev.nextMeeting || '')}" placeholder="例：火曜20時以降、水曜の昼">`, { help: '個別面談（60分）の日程調整に使います。' }) : ''}
 
-          ${w >= 11 ? q('12週間をふり返って', `<textarea name="reflection" rows="4">${esc(prev.reflection || '')}</textarea>`, { help: '変わったこと、続けられたこと、これからも続けたいことなど。' })
-            + q('12週間のあと、どうしたいですか？', `<div class="f-opts">${['続けたい', '相談したい', '今回で終了'].map((o) => `<label class="f-opt"><input type="radio" name="renewIntent" value="${o}"${prev.renewIntent === o ? ' checked' : ''}><span>${o}</span></label>`).join('')}</div>`,
+          ${w >= WEEKS - 1 ? q(`${WEEKS}週間をふり返って`, `<textarea name="reflection" rows="4">${esc(prev.reflection || '')}</textarea>`, { help: '変わったこと、続けられたこと、これからも続けたいことなど。' })
+            + q(`${WEEKS}週間のあと、どうしたいですか？`, `<div class="f-opts">${['続けたい', '相談したい', '今回で終了'].map((o) => `<label class="f-opt"><input type="radio" name="renewIntent" value="${o}"${prev.renewIntent === o ? ' checked' : ''}><span>${o}</span></label>`).join('')}</div>`,
               { help: '今の気持ちで大丈夫です。最終評価のときに一緒に決めましょう。' }) : ''}
         </section>
         <div id="formErr"></div>
@@ -401,6 +405,7 @@
     } catch (e) {
       return fatal(errText(e));
     }
+    if (Number.isInteger(data.client.weeks)) WEEKS = data.client.weeks;
     document.title = data.client.intakeDone && mode !== 'intake' ? 'チェックイン' : '事前ヒアリング';
     if (!data.client.intakeDone || mode === 'intake') renderIntake(); else renderCheckin();
   })();

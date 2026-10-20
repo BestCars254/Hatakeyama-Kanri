@@ -235,6 +235,9 @@ button.cell:active, a.cell:active, label.cell:active { background: var(--fill); 
 }
 .cell input[type="date"] { border: 0; background: var(--fill); border-radius: 8px; padding: 6px 10px; color: var(--label); font-size: .94rem; min-height: 34px; }
 .cell .lab { flex: none; }
+.cell .unit { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 4px; color: var(--label2); }
+.cell .unit input { -moz-appearance: textfield; }
+.cell .unit input::-webkit-inner-spin-button, .cell .unit input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .cell textarea { width: 100%; min-height: 88px; border: 0; background: transparent; color: var(--label); font-size: 1rem; resize: vertical; outline: none; }
 .cell input::placeholder, .cell textarea::placeholder { color: var(--label3); }
 .weights { flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }

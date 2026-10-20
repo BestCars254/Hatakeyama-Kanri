@@ -11,6 +11,8 @@
 import crypto from 'node:crypto';
 
 const STATUSES = ['入金待ち', '進行中', '終了', '継続相談'];
+const DEFAULT_WEEKS = 12; // 期間を決めていないお客様（以前からのお客様）
+const MAX_WEEKS = 52;
 
 const CLIENT_FIELDS = {
   id: 'id', name: 'text', lineName: 'text', goal: 'text',
@@ -18,6 +20,7 @@ const CLIENT_FIELDS = {
   status: 'status', memo: 'text',
   eval0: 'date', eval4: 'date', eval8: 'date', eval12: 'date',
   finalDone: 'date', finalPlan: 'text',
+  planName: 'text', planWeeks: 'planWeeks', price: 'yen',
 };
 const WEEK_FIELDS = {
   clientId: 'id', week: 'week', weights: 'weights', checks: 'checks',
@@ -139,7 +142,7 @@ async function saveWeek(input, store) {
 }
 
 /**
- * 更新（次の12週）の入金を確認したとき：いまの期間を履歴（client.cycles）に移して、新しい期間を始める。
+ * 更新（次の期間）の入金を確認したとき：いまの期間を履歴（client.cycles）に移して、新しい期間を始める。
  * 開始日は空にするので、管理画面で決め直す。
  */
 async function renewClient(id, paidDate, store) {
@@ -154,6 +157,7 @@ async function renewClient(id, paidDate, store) {
       cycles.push({
         paidDate: c.paidDate, startDate: c.startDate, goal: c.goal,
         eval0: c.eval0, eval4: c.eval4, eval8: c.eval8, eval12: c.eval12,
+        planName: c.planName || '', planWeeks: c.planWeeks || '', price: c.price == null ? '' : c.price,
         finalDone: c.finalDone, finalPlan: c.finalPlan, weeks: d.weeks || {}, closedAt: now,
       });
       c.cycles = cycles.slice(-20);
@@ -194,15 +198,17 @@ async function clientIdByKey(key, store) {
   return k.clientId;
 }
 
-/** 日本時間の今日が第何週か（開始前 0、終了後 13） */
-function currentWeek(startDate) {
+const weeksOf = (c) => (Number.isInteger(c.planWeeks) && c.planWeeks >= 1 && c.planWeeks <= MAX_WEEKS ? c.planWeeks : DEFAULT_WEEKS);
+
+/** 日本時間の今日が第何週か（開始前 0、終了後 期間+1） */
+function currentWeek(startDate, weeks = DEFAULT_WEEKS) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate || '');
   if (!m) return null;
   const start = Date.UTC(+m[1], +m[2] - 1, +m[3]);
   const now = new Date(Date.now() + TZ_OFFSET_MS);
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const dd = Math.round((today - start) / 86400000);
-  return dd < 0 ? 0 : Math.min(Math.floor(dd / 7) + 1, 13);
+  return dd < 0 ? 0 : Math.min(Math.floor(dd / 7) + 1, weeks + 1);
 }
 
 /** お客様に見せるのは本人の最小限の情報だけ */
@@ -219,9 +225,9 @@ async function formGet(key, store) {
   }
   return {
     ok: true,
-    client: { name: c.name, startDate: c.startDate, checkinDow: c.checkinDow, intakeDone: !!(c.intake && c.intake.submittedAt) },
+    client: { name: c.name, startDate: c.startDate, checkinDow: c.checkinDow, weeks: weeksOf(c), intakeDone: !!(c.intake && c.intake.submittedAt) },
     intake: c.intake ? c.intake.answers : null,
-    currentWeek: currentWeek(c.startDate),
+    currentWeek: currentWeek(c.startDate, weeksOf(c)),
     weeks,
   };
 }
@@ -252,9 +258,9 @@ async function formCheckin(key, input, store) {
   const now = new Date().toISOString();
   const doc = await update(store, id, (d) => {
     if (d.client.formKey !== key) throw new ApiError('invalid_link');
-    const cur = currentWeek(d.client.startDate);
+    const cur = currentWeek(d.client.startDate, weeksOf(d.client));
     if (!cur) throw new ApiError('not_started');
-    if (week > Math.min(cur, 12)) throw new ApiError('bad_request'); // 先の週には出せない
+    if (week > Math.min(cur, weeksOf(d.client))) throw new ApiError('bad_request'); // 先の週には出せない
     d.weeks = d.weeks || {};
     const prev = { ...EMPTY_WEEK, ...d.weeks[week] };
     const next = { clientId: id, week, ...prev, ...patch, checkinDone: true, submittedAt: now, updatedAt: now };
@@ -279,9 +285,9 @@ async function formPhoto(key, weekIn, slot, data, store) {
   if (buf.length > PHOTO_MAX || buf[0] !== 0xff || buf[1] !== 0xd8) throw new ApiError('bad_request'); // JPEG のみ
   const cur0 = await store.get('c/' + id, { type: 'json' });
   if (!cur0 || cur0.client.formKey !== key) throw new ApiError('invalid_link');
-  const cur = currentWeek(cur0.client.startDate);
+  const cur = currentWeek(cur0.client.startDate, weeksOf(cur0.client));
   if (!cur) throw new ApiError('not_started');
-  if (week > Math.min(cur, 12)) throw new ApiError('bad_request');
+  if (week > Math.min(cur, weeksOf(cur0.client))) throw new ApiError('bad_request');
   const cycle = (Array.isArray(cur0.client.cycles) ? cur0.client.cycles.length : 0) + 1;
   const path = `p/${id}/${cycle}/${week}/${slot}`;
   await store.set(path, buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length), { metadata: { type: 'image/jpeg' } });
@@ -365,7 +371,19 @@ function cast(type, v) {
       return String(v);
     case 'week': {
       const n = Number(v);
-      if (!Number.isInteger(n) || n < 1 || n > 12) throw new ApiError('bad_request');
+      if (!Number.isInteger(n) || n < 1 || n > MAX_WEEKS) throw new ApiError('bad_request');
+      return n;
+    }
+    case 'planWeeks': {
+      if (v === '') return '';
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 4 || n > MAX_WEEKS) throw new ApiError('bad_request');
+      return n;
+    }
+    case 'yen': {
+      if (v === '') return '';
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 100000000) throw new ApiError('bad_request');
       return n;
     }
     case 'int7': return Math.max(0, Math.min(7, Math.floor(Number(v) || 0)));

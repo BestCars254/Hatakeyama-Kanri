@@ -5,19 +5,30 @@
 
   const API_URL = '/api';
   const CACHE_KEY = 'hk_cache';
-  const WEEKS = 12;
+  // 標準のプラン。お客様ごとに「編集」で変えられる（未設定ならこの値）
+  const DEF = { plan: '3ヶ月（12週）完全オンライン', weeks: 12, price: 330000 };
+  const MAX_WEEKS = 52;
   const DOW = ['日', '月', '火', '水', '木', '金', '土'];
   const ST = { WAIT: '入金待ち', ACTIVE: '進行中', DONE: '終了', CONSULT: '継続相談' };
   const STATUSES = [ST.WAIT, ST.ACTIVE, ST.DONE, ST.CONSULT];
   const CHECK_ITEMS = window.CHECK_ITEMS; // js/questions.js
   const INTAKE = window.INTAKE;
   const RECENT_MS = 3 * 86400000; // 「お客様からの提出」に出す期間
-  const EVALS = [
-    { key: 'eval0', week: 1, label: '開始時' },
-    { key: 'eval4', week: 4, label: '4週' },
-    { key: 'eval8', week: 8, label: '8週' },
-    { key: 'eval12', week: 12, label: '12週' },
-  ];
+  /** お客様（または過去の期間）の週数・料金・プラン名 */
+  const nW = (c) => (c && Number.isInteger(c.planWeeks) && c.planWeeks >= 1 && c.planWeeks <= MAX_WEEKS ? c.planWeeks : DEF.weeks);
+  const priceOf = (c) => (c && Number.isInteger(c.price) ? c.price : DEF.price);
+  const planOf = (c) => (c && c.planName) || DEF.plan;
+  /** 身体評価：開始時・期間の1/3・2/3・最終週（12週なら 4・8・12週）。キー名は保存形式のまま */
+  function evalsOf(c) {
+    const n = nW(c);
+    const a = Math.max(2, Math.round(n / 3)), b = Math.max(a + 1, Math.round(n * 2 / 3));
+    return [
+      { key: 'eval0', week: 1, label: '開始時' },
+      { key: 'eval4', week: a, label: a + '週' },
+      { key: 'eval8', week: b, label: b + '週' },
+      { key: 'eval12', week: n, label: n + '週' },
+    ];
+  }
   const FORM_MAX = 2;
   const MEAL_TARGET = 3;
   const OVERDUE_SHOWN = 8;
@@ -74,13 +85,14 @@
 
   // ================================================================ スケジュール計算
 
-  /** 開始日から 12 週の枠を作る。cur = 今日が何週目か（開始前 0、終了後 13） */
+  /** 開始日から n 週の枠を作る。cur = 今日が何週目か（開始前 0、終了後 n+1） */
   function sched(c) {
     const start = pd(c.startDate);
     if (!start) return null;
+    const n = nW(c);
     const dd = diffDays(today(), start);
-    const cur = dd < 0 ? 0 : Math.min(Math.floor(dd / 7) + 1, WEEKS + 1);
-    return { start, end: addDays(start, WEEKS * 7 - 1), cur };
+    const cur = dd < 0 ? 0 : Math.min(Math.floor(dd / 7) + 1, n + 1);
+    return { start, end: addDays(start, n * 7 - 1), cur, n };
   }
   function weekStart(s, n) { return addDays(s.start, 7 * (n - 1)); }
   function weekEnd(s, n) { return addDays(s.start, 7 * n - 1); }
@@ -112,7 +124,7 @@
     const t = today();
     const r = rec(c.id, w) || {};
     if (kind === 'eval') {
-      const ev = EVALS.find((e) => e.week === w);
+      const ev = evalsOf(c).find((e) => e.week === w);
       if (!ev) return 'none';
       if (c[ev.key]) return 'done';
       return evalDue(c, s, ev) < t ? 'miss' : 'todo';
@@ -137,9 +149,10 @@
 
   function stats(c) {
     const s = sched(c);
-    const out = { s, meet: 0, rep: 0, chk: 0, evals: EVALS.filter((e) => c[e.key]).length,
+    const n = nW(c);
+    const out = { s, n, meet: 0, rep: 0, chk: 0, evals: evalsOf(c).filter((e) => c[e.key]).length,
       missMeet: 0, missRep: 0, missChk: 0, missEval: 0, latestW: null, latestS: null };
-    for (let w = 1; w <= WEEKS; w++) {
+    for (let w = 1; w <= n; w++) {
       const r = rec(c.id, w);
       if (r && r.meetingDate) out.meet++;
       if (r && r.reportSent) out.rep++;
@@ -151,7 +164,7 @@
         if (cellState(c, s, w, 'eval') === 'miss') out.missEval++;
       }
     }
-    for (let w = WEEKS; w >= 1; w--) {
+    for (let w = n; w >= 1; w--) {
       const r = rec(c.id, w);
       if (!out.latestW && avgW(r) != null) out.latestW = { w, v: avgW(r) };
       if (!out.latestS && hasScore(r)) out.latestS = { w, v: scoreOf(r) };
@@ -162,7 +175,7 @@
   function nextCheckin(c, s) {
     if (!s || c.checkinDow === '') return null;
     const t = today();
-    for (let w = Math.max(s.cur, 1); w <= WEEKS; w++) {
+    for (let w = Math.max(s.cur, 1); w <= s.n; w++) {
       const d = dowInWeek(s, w, c.checkinDow);
       const r = rec(c.id, w);
       if (d >= t && !(r && r.checkinDone)) return d;
@@ -172,7 +185,7 @@
   function nextMeeting(c, s) {
     if (!s) return null;
     const t = today();
-    for (let w = Math.max(s.cur, 1); w <= WEEKS; w++) {
+    for (let w = Math.max(s.cur, 1); w <= s.n; w++) {
       const r = rec(c.id, w);
       if (r && r.meetingDate) continue;
       const d = dowInWeek(s, w, c.meetingDow);
@@ -199,7 +212,7 @@
         if (diffDays(s.start, t) <= 7) add('week', { kind: 'go', key: 'prestart', text: '開始日 ' + mdw(s.start), href: '#/c/' + c.id, date: s.start });
         continue;
       }
-      const last = Math.min(s.cur, WEEKS);
+      const last = Math.min(s.cur, s.n);
       for (let w = 1; w <= last; w++) {
         const r = rec(c.id, w) || {};
         const isCur = w === s.cur;
@@ -236,7 +249,7 @@
         }
 
         // 目標・身体評価
-        for (const ev of EVALS) {
+        for (const ev of evalsOf(c)) {
           if (ev.week !== w || c[ev.key]) continue;
           const d = evalDue(c, s, ev);
           const b = bucket(d);
@@ -245,13 +258,13 @@
         }
       }
 
-      // 最終評価（11週目から表示）
-      if (s.cur >= 11 && !c.finalDone) {
+      // 最終評価（最終週の1週前から表示）
+      if (s.cur >= s.n - 1 && !c.finalDone) {
         const b = bucket(s.end);
-        add(b, { kind: 'final', key: 'final', date: s.end, text: `最終評価（12週の変化と今後の計画）〜${mdw(s.end)}` });
+        add(b, { kind: 'final', key: 'final', date: s.end, text: `最終評価（${s.n}週の変化と今後の計画）〜${mdw(s.end)}` });
       }
-      if (s.cur > WEEKS) {
-        add('overdue', { kind: 'go', key: 'ended', date: s.end, text: `12週が終了（${md(s.end)}）→ 状態を更新`, href: '#/edit/' + c.id });
+      if (s.cur > s.n) {
+        add('overdue', { kind: 'go', key: 'ended', date: s.end, text: `${s.n}週が終了（${md(s.end)}）→ 状態を更新`, href: '#/edit/' + c.id });
       }
     }
     const sort = (a, b) => (a.date - b.date) || (order[a.kind] - order[b.kind]) || a.c.name.localeCompare(b.c.name, 'ja');
@@ -392,7 +405,6 @@
   // 見た目と操作は Apple の HIG（iOS）に合わせる：ナビゲーションバー＋大きなタイトル、
   // 設定アプリ型のグループ、リマインダー型の丸いチェック、ステッパー、スイッチ、シート、浮いたタブバー。
 
-  const PRICE = 330000; // 3ヶ月プラン（税込）
   const ui = { filter: 'all', q: '', sheet: null };
   let T = null;
 
@@ -420,7 +432,7 @@
     document.body.classList.remove('sheet-open');
     if (!state.ready) { $app.innerHTML = '<div class="loading"><span class="spin"></span></div>'; return; }
     const [a, b, c, d] = location.hash.replace(/^#\/?/, '').split('/');
-    if (a === 'c' && b && c === 'w' && Number(d) >= 1 && Number(d) <= WEEKS) return renderWeekEdit(decodeURIComponent(b), Number(d));
+    if (a === 'c' && b && c === 'w' && Number(d) >= 1 && Number(d) <= MAX_WEEKS) return renderWeekEdit(decodeURIComponent(b), Number(d));
     if (a === 'c' && b && c === 'report') return renderReport(decodeURIComponent(b));
     if (a === 'c' && b) return renderDetail(decodeURIComponent(b));
     if (a === 'new') return renderNew();
@@ -466,7 +478,7 @@
     const intake = c.intake && c.intake.submittedAt;
     const since = (d) => (d ? Math.max(0, diffDays(t, d)) : 0);
     if (c.status === ST.WAIT) {
-      // 入金待ち＝更新（次の12週）の入金を待っているお客様
+      // 入金待ち＝更新（次の期間）の入金を待っているお客様
       const from = pd((c.updatedAt || '').slice(0, 10)) || t;
       out.push({ short: '更新の入金', long: '更新の入金確認', days: since(from), level: 'today' });
       return out;
@@ -479,11 +491,11 @@
     }
     const tk = tasksOf(c.id);
     for (const x of tk.overdue) {
-      if (x.kind === 'go') out.push({ short: x.key === 'ended' ? '12週終了' : '開始日', long: x.key === 'ended' ? '状態の更新' : '開始日の設定', days: since(x.date), level: 'late' });
+      if (x.kind === 'go') out.push({ short: x.key === 'ended' ? `${nW(c)}週終了` : '開始日', long: x.key === 'ended' ? '状態の更新' : '開始日の設定', days: since(x.date), level: 'late' });
       else out.push({ short: SHORT[x.kind], long: SHORT[x.kind], days: since(x.date), level: 'late' });
     }
     for (const x of tk.today) if (x.kind !== 'go') out.push({ short: SHORT[x.kind], long: SHORT[x.kind], level: 'today' });
-    if (c.renewIntent === '続けたい' && sched(c) && sched(c).cur >= 11) out.push({ short: '継続希望', long: '継続の希望', level: 'today' });
+    if (c.renewIntent === '続けたい' && sched(c) && sched(c).cur >= nW(c) - 1) out.push({ short: '継続希望', long: '継続の希望', level: 'today' });
     if (!intake) out.push({ short: 'ヒアリング', long: 'ヒアリングの回答', level: 'info' });
     return out;
   }
@@ -512,8 +524,8 @@
     if (c.status === ST.CONSULT) return '継続相談';
     if (!s) return '開始日未定';
     if (s.cur === 0) return `${mdw(s.start)}に開始`;
-    if (s.cur > WEEKS) return '12週終了';
-    return `${s.cur}週目／12週・チェックイン${c.checkinDow === '' ? '未設定' : DOW[c.checkinDow] + '曜'}`;
+    if (s.cur > s.n) return `${s.n}週終了`;
+    return `${s.cur}週目／${s.n}週・チェックイン${c.checkinDow === '' ? '未設定' : DOW[c.checkinDow] + '曜'}`;
   }
   function clientCell(c, iss) {
     return `<button type="button" class="cell" data-act="sheet" data-id="${esc(c.id)}">
@@ -523,17 +535,18 @@
 
   // ================================================================ ホーム
 
-  /** その月に入金したお客様（更新の入金も含む）。同じ人が2回入れば2件 */
+  /** その月の入金（更新の入金も含む）。同じ人が2回入れば2件。金額はその期間のプランの料金 */
   function paidIn(y, m) {
     const out = [];
     for (const c of state.clients) {
-      for (const p of [c.paidDate, ...(c.cycles || []).map((x) => x.paidDate)]) {
-        const d = pd(p);
-        if (d && d.getFullYear() === y && d.getMonth() === m) out.push(c);
+      for (const x of [c, ...(c.cycles || [])]) {
+        const d = pd(x.paidDate);
+        if (d && d.getFullYear() === y && d.getMonth() === m) out.push({ c, price: priceOf(x) });
       }
     }
     return out;
   }
+  const sumYen = (list) => list.reduce((n, x) => n + x.price, 0);
   const yen = (n) => '¥' + n.toLocaleString('ja-JP');
 
   function renderHome() {
@@ -558,7 +571,7 @@
           ${sum(ST.ACTIVE, '進行中', n.active, 'var(--tint)')}${sum(ST.WAIT, '更新の入金待ち', n.wait, 'var(--teal)')}
           ${sum(ST.DONE, '終了', n.done, 'var(--gray)')}${sum('late', '遅れ', n.late, 'var(--brown)', n.late ? 'late' : '')}
         </div>
-        ${group('', `<a class="cell" href="#/money"><span class="cell-main"><span class="t">${t.getMonth() + 1}月の入金</span></span><span class="v strong">${yen(paid.length * PRICE)}（${paid.length}名）</span>${chev}</a>`)}
+        ${group('', `<a class="cell" href="#/money"><span class="cell-main"><span class="t">${t.getMonth() + 1}月の入金</span></span><span class="v strong">${yen(sumYen(paid))}（${paid.length}名）</span>${chev}</a>`)}
         ${need.length ? `<div class="notice"><span class="ic">${I.warn}</span><div><b>${need.length}名が対応を待っています</b><span>上から順に、タップして済にしてください。</span></div></div>`
           : '<div class="notice ok"><span class="ic">' + I.ok + '</span><div><b>今日やることはすべて済んでいます</b></div></div>'}
         ${subs.length ? group('お客様から届いた', subs.map((x) => `<a class="cell" href="#/c/${encodeURIComponent(x.c.id)}">
@@ -592,10 +605,10 @@
   function weekTasks(c) {
     const s = sched(c);
     const t = today();
-    if (c.status === ST.WAIT) return [{ act: 'tg-renew', done: false, label: '更新の入金を確認した', sub: '確認すると次の12週が始まり、売上に入ります' }];
+    if (c.status === ST.WAIT) return [{ act: 'tg-renew', done: false, label: '更新の入金を確認した', sub: `確認すると次の${nW(c)}週が始まり、売上に入ります` }];
     if (c.status === ST.ACTIVE && !c.startDate) return [{ act: 'go-edit', done: false, label: '開始日とチェックイン曜日を決める', sub: '決めると毎週の予定が自動で出ます' }];
     if (c.status !== ST.ACTIVE || !s || s.cur < 1) return [];
-    const w = Math.min(s.cur, WEEKS);
+    const w = Math.min(s.cur, s.n);
     const r = rec(c.id, w) || {};
     const ci = dowInWeek(s, w, c.checkinDow);
     const mt = dowInWeek(s, w, c.meetingDow);
@@ -606,12 +619,12 @@
         sub: r.meetingDate ? `${mdwS(r.meetingDate)}に実施` : `${mt ? `予定 ${mdw(mt)}` : '今週中'}${(rec(c.id, w - 1) || {}).nextMeeting ? `・希望「${(rec(c.id, w - 1) || {}).nextMeeting}」` : ''}`, late: !r.meetingDate && mt && mt < t },
       { act: 'tg-report', w, done: !!r.reportSent, label: '週間レポートを送った', sub: '振り返りと改善提案' },
     ];
-    for (const ev of EVALS) {
+    for (const ev of evalsOf(c)) {
       if (ev.week !== w) continue;
       const due = evalDue(c, s, ev);
       out.push({ act: 'tg-eval', key: ev.key, w, done: !!c[ev.key], label: `${ev.label === '開始時' ? '開始時' : ev.week + '週目'}の身体評価`, sub: c[ev.key] ? `${mdwS(c[ev.key])}に実施` : `予定 ${mdw(due)}`, late: !c[ev.key] && due < t });
     }
-    if (s.cur >= 11) out.push({ act: 'tg-final', w, done: !!c.finalDone, label: '最終評価', sub: c.finalDone ? `${mdwS(c.finalDone)}に実施` : `〜${mdw(s.end)}`, late: !c.finalDone && s.end < t });
+    if (s.cur >= s.n - 1) out.push({ act: 'tg-final', w, done: !!c.finalDone, label: '最終評価', sub: c.finalDone ? `${mdwS(c.finalDone)}に実施` : `〜${mdw(s.end)}`, late: !c.finalDone && s.end < t });
     return out;
   }
   function taskCells(c) {
@@ -631,7 +644,7 @@
   }
   function msgCheckin(c) { return `${san(c.name)}\n今週のチェックインをお願いします。\n${formUrl(c)}`; }
   function msgRenew(c) {
-    return `${san(c.name)}\n継続のお申し込みありがとうございます。畠山です。\n次の12週（税込33万円）のお振込みを確認でき次第、開始日をご相談させてください。`;
+    return `${san(c.name)}\n継続のお申し込みありがとうございます。畠山です。\n次の${nW(c)}週（税込${priceOf(c).toLocaleString('ja-JP')}円）のお振込みを確認でき次第、開始日をご相談させてください。`;
   }
   function mainMessage(c) {
     const intake = c.intake && c.intake.submittedAt;
@@ -703,15 +716,16 @@
     const t = today();
     const months = [];
     for (let i = 0; i < 12; i++) { const d = new Date(t.getFullYear(), t.getMonth() - i, 1); months.push({ d, list: paidIn(d.getFullYear(), d.getMonth()) }); }
-    const total = state.clients.reduce((n, c) => n + (c.paidDate ? 1 : 0) + (c.cycles || []).filter((x) => x.paidDate).length, 0);
+    const all = [];
+    for (const c of state.clients) for (const x of [c, ...(c.cycles || [])]) if (x.paidDate) all.push({ price: priceOf(x) });
     $app.innerHTML = `
       ${navbar({ title: '売上' })}
       <main class="page">
         ${largeTitle('売上')}
-        <div class="money"><small>${t.getMonth() + 1}月の入金</small><b>${yen(months[0].list.length * PRICE)}</b><small>${months[0].list.length}名</small></div>
+        <div class="money"><small>${t.getMonth() + 1}月の入金</small><b>${yen(sumYen(months[0].list))}</b><small>${months[0].list.length}名</small></div>
         ${group('月ごと', months.map(({ d, list }) => `<div class="cell"><span class="cell-main"><span class="t">${d.getFullYear()}年${d.getMonth() + 1}月</span>
-          ${list.length ? `<span class="s">${list.map((c) => esc(san(c.name))).join('、')}</span>` : ''}</span><span class="v${list.length ? ' strong' : ''}">${yen(list.length * PRICE)}</span></div>`).join(''),
-          `入金確認日をもとに、3ヶ月プラン（税込33万円）× 人数で計算しています。累計 ${total}名・${yen(total * PRICE)}。`)}
+          ${list.length ? `<span class="s">${list.map((x) => esc(san(x.c.name))).join('、')}</span>` : ''}</span><span class="v${list.length ? ' strong' : ''}">${yen(sumYen(list))}</span></div>`).join(''),
+          `入金確認日をもとに、お客様ごとのプランの料金（税込）を合計しています。累計 ${all.length}件・${yen(sumYen(all))}。`)}
       </main>
       ${tabbar('money')}`;
   }
@@ -725,8 +739,8 @@
         ${largeTitle('設定', '', state.syncedAt ? `${state.syncedAt.getHours()}:${String(state.syncedAt.getMinutes()).padStart(2, '0')}に更新` : '')}
         ${group('', `<button type="button" class="cell tint" data-act="refresh"><span class="cell-main"><span class="t">最新の状態に更新</span></span></button>
           <button type="button" class="cell tint" data-act="backup"><span class="cell-main"><span class="t">バックアップを保存</span><span class="s">すべてのデータをファイルで保存します</span></span></button>`)}
-        ${group('プラン', kv('内容', '3ヶ月（12週）完全オンライン') + kv('料金', '30万円（税込33万円）') + kv('支払い', '銀行振込・入金確認後に開始') + kv('初回', 'カウンセリング60分') + kv('継続', '個別相談'))}
-        ${group('お客様との約束', kv('個別面談', '週1回60分×12回') + kv('身体評価', '開始時・4週・8週・12週') + kv('フォーム添削', '動画 週2本まで') + kv('食事記録の確認', '週3日分') + kv('週間レポート', '週1回') + kv('LINE返信', '原則2営業日以内'), '日曜・祝日はLINEの返信をしません。')}
+        ${group('標準のプラン', kv('内容', DEF.plan) + kv('料金', '30万円（税込33万円）') + kv('支払い', '銀行振込・入金確認後に開始') + kv('初回', 'カウンセリング60分') + kv('継続', '個別相談'), 'プラン名・期間・料金は、お客様ごとに「編集」で変えられます。')}
+        ${group('お客様との約束', kv('個別面談', '週1回60分×期間の週数') + kv('身体評価', '開始時・途中2回・最終週') + kv('フォーム添削', '動画 週2本まで') + kv('食事記録の確認', '週3日分') + kv('週間レポート', '週1回') + kv('LINE返信', '原則2営業日以内'), '日曜・祝日はLINEの返信をしません。')}
       </main>
       ${tabbar('menu')}`;
   }
@@ -740,7 +754,7 @@
     const iss = issues(c);
     const st = stats(c);
     const t = today();
-    const w = s && s.cur >= 1 ? Math.min(s.cur, WEEKS) : null;
+    const w = s && s.cur >= 1 ? Math.min(s.cur, s.n) : null;
     const r = w ? rec(c.id, w) || {} : {};
     const nc = nextCheckin(c, s);
     const late = lateText(iss);
@@ -775,7 +789,9 @@
         </section>
 
         ${group('情報', [
-          kv('進み具合', s && s.cur >= 1 ? `${Math.min(s.cur, WEEKS)}週目／12週` : '開始前', 'strong'),
+          kv('進み具合', s && s.cur >= 1 ? `${Math.min(s.cur, s.n)}週目／${s.n}週` : '開始前', 'strong'),
+          kv('プラン', esc(planOf(c))),
+          kv('期間・料金', `${nW(c)}週・${yen(priceOf(c))}`),
           kv('入金確認日', c.paidDate ? slash(c.paidDate) : '未確認', c.paidDate ? '' : 'late-t'),
           kv('開始日', c.startDate ? slash(c.startDate) : '未設定', c.startDate ? '' : 'late-t'),
           kv('終了予定日', s ? slash(fd(s.end)) : '—'),
@@ -785,25 +801,25 @@
           kv('LINE名', esc(c.lineName || '—')),
           c.goal ? kv('目標', esc(c.goal)) : '',
           c.memo ? kv('メモ', esc(c.memo)) : '',
-        ].join(''), `約束の達成：面談 ${st.meet}/12・身体評価 ${st.evals}/4・レポート ${st.rep}/12・チェックイン ${st.chk}/12`)}
+        ].join(''), `約束の達成：面談 ${st.meet}/${st.n}・身体評価 ${st.evals}/4・レポート ${st.rep}/${st.n}・チェックイン ${st.chk}/${st.n}`)}
 
         ${group('事前ヒアリング', intakeCell(c))}
 
-        ${group('身体評価', EVALS.map((ev) => {
+        ${group('身体評価', evalsOf(c).map((ev) => {
           const due = s ? evalDue(c, s, ev) : null;
           const miss = !c[ev.key] && due && due < t;
           return `<div class="cell"><span class="cell-main"><span class="t">${ev.label}</span><span class="s${miss ? ' late-t' : ''}">予定 ${mdw(due)}${miss ? '・遅れ' : ''}</span></span>
             <input type="date" value="${esc(c[ev.key] || '')}" data-act="evaldate" data-key="${ev.key}" aria-label="${ev.label}の実施日"></div>`;
         }).join(''), '実施した日を入れてください。')}
-        ${s && (s.cur >= 11 || c.finalDone || c.finalPlan) ? finalGroup(c, s) : ''}
+        ${s && (s.cur >= s.n - 1 || c.finalDone || c.finalPlan) ? finalGroup(c, s) : ''}
 
         ${historyGroup(c, s)}
 
         ${cyclesGroup(c)}
         ${c.status === ST.ACTIVE || c.status === ST.DONE || c.status === ST.CONSULT ? group('状態', [
-          c.status === ST.ACTIVE && s && s.cur >= 11 ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.CONSULT}"><span class="cell-main"><span class="t">継続の相談に進む</span></span></button>` : '',
+          c.status === ST.ACTIVE && s && s.cur >= s.n - 1 ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.CONSULT}"><span class="cell-main"><span class="t">継続の相談に進む</span></span></button>` : '',
           c.status === ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.DONE}"><span class="cell-main"><span class="t">終了にする</span></span></button>` : '',
-          c.status !== ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.WAIT}"><span class="cell-main"><span class="t">更新する（次の12週）</span><span class="s">更新の入金待ちにします</span></span></button>` : '',
+          c.status !== ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.WAIT}"><span class="cell-main"><span class="t">更新する（次の${nW(c)}週）</span><span class="s">更新の入金待ちにします</span></span></button>` : '',
           c.status !== ST.ACTIVE ? `<button type="button" class="cell tint" data-act="status" data-v="${ST.ACTIVE}"><span class="cell-main"><span class="t">進行中に戻す</span></span></button>` : '',
         ].join('')) : ''}
         ${group('', `<button type="button" class="cell danger center" data-act="delete" data-id="${esc(c.id)}"><span class="cell-main"><span class="t">このお客様を削除</span></span></button>`)}
@@ -813,7 +829,7 @@
     loadPhotos();
   }
 
-  /** これまでの期間（更新前の12週） */
+  /** これまでの期間（更新前の期間） */
   function cyclesGroup(c) {
     const cy = c.cycles || [];
     if (!cy.length) return '';
@@ -823,10 +839,11 @@
       const kgs = ws.slice().sort((a, b) => a.week - b.week).map(avgW).filter((v) => v != null);
       const meet = ws.filter((r) => r.meetingDate).length;
       const rep = ws.filter((r) => r.reportSent).length;
-      const range = st ? `${fd(st).replace(/-/g, '/')}〜${fd(addDays(st, WEEKS * 7 - 1)).replace(/-/g, '/')}` : '';
+      const n = nW(x);
+      const range = st ? `${fd(st).replace(/-/g, '/')}〜${fd(addDays(st, n * 7 - 1)).replace(/-/g, '/')}` : '';
       const wt = kgs.length >= 2 ? `体重 ${kgs[0].toFixed(1)}→${kgs[kgs.length - 1].toFixed(1)}kg・` : '';
       return `<div class="cell"><span class="cell-main"><span class="t b">第${i + 1}期 <span style="font-weight:400;color:var(--label2);font-size:.88rem">${range}</span></span>
-        <span class="s">${wt}面談 ${meet}/12・レポート ${rep}/12${x.paidDate ? `・入金 ${x.paidDate.replace(/-/g, '/')}` : ''}</span>
+        <span class="s">${wt}面談 ${meet}/${n}・レポート ${rep}/${n}${x.paidDate ? `・入金 ${x.paidDate.replace(/-/g, '/')}` : ''}</span>
         ${x.finalPlan ? `<span class="quote">${esc(x.finalPlan)}</span>` : ''}</span><span class="badge ok">済</span></div>`;
     }).reverse().join('');
     return group(`これまでの期間（いまは第${cy.length + 1}期）`, rows);
@@ -850,10 +867,11 @@
 
   function historyGroup(c, s) {
     const cells = [];
-    for (let w = WEEKS; w >= 1; w--) {
+    const total = nW(c);
+    for (let w = total; w >= 1; w--) {
       const r = rec(c.id, w);
       const has = r && (r.weights.length || r.checks || r.checkinDone || r.memo || r.meetingDate || r.submittedAt);
-      if (!has && !(s && w === Math.min(s.cur, WEEKS))) continue;
+      if (!has && !(s && w === Math.min(s.cur, total))) continue;
       const rr = r || {};
       const n = scoreOf(rr);
       const rt = rr.ratings || {};
@@ -874,14 +892,14 @@
 
   function finalGroup(c, s) {
     const recs = [];
-    for (let w = 1; w <= WEEKS; w++) recs.push(rec(c.id, w));
+    for (let w = 1; w <= s.n; w++) recs.push(rec(c.id, w));
     const withW = recs.map((r, i) => ({ w: i + 1, v: avgW(r) })).filter((x) => x.v != null);
     const first = withW[0];
     const lastW = withW[withW.length - 1];
     const diff = first && lastW && lastW.w !== first.w ? lastW.v - first.v : null;
     return `<form id="finalForm">${group(`最終評価（〜${mdw(s.end)}）`, `
       ${kv('体重の変化', `${first ? kg(first.v) : '—'} → ${lastW ? kg(lastW.v) : '—'}${diff == null ? '' : `（${diff > 0 ? '+' : ''}${diff.toFixed(1)}kg）`}`)}
-      <div class="cell"><textarea name="finalPlan" rows="4" placeholder="12週の変化と今後の計画（継続の相談も）" aria-label="12週の変化と今後の計画">${esc(c.finalPlan || '')}</textarea></div>
+      <div class="cell"><textarea name="finalPlan" rows="4" placeholder="${s.n}週の変化と今後の計画（継続の相談も）" aria-label="${s.n}週の変化と今後の計画">${esc(c.finalPlan || '')}</textarea></div>
       <label class="cell"><span class="cell-main"><span class="t">実施日</span></span><input type="date" name="finalDone" value="${esc(c.finalDone || '')}"></label>
       <button class="cell tint center" type="submit"><span class="cell-main"><span class="t">保存</span></span></button>`)}</form>`;
   }
@@ -900,7 +918,7 @@
     const cv = document.getElementById('chart');
     if (!cv) return;
     const pts = [];
-    for (let w = 1; w <= WEEKS; w++) { const v = avgW(rec(c.id, w)); if (v != null) pts.push({ w, v: Math.round(v * 10) / 10 }); }
+    for (let w = 1; w <= nW(c); w++) { const v = avgW(rec(c.id, w)); if (v != null) pts.push({ w, v: Math.round(v * 10) / 10 }); }
     const chg = document.getElementById('chg');
     if (pts.length >= 2 && chg) { const d = pts[pts.length - 1].v - pts[0].v; chg.textContent = `${d > 0 ? '+' : ''}${d.toFixed(1)} kg`; }
     const msg = document.getElementById('chartMsg');
@@ -948,7 +966,7 @@
     const s = sched(c);
     const out = [];
     if (c.status !== ST.ACTIVE || !s || s.cur < 1) return out;
-    const last = Math.min(s.cur, WEEKS);
+    const last = Math.min(s.cur, s.n);
     const W = [];
     for (let w = 1; w <= last; w++) W.push({ w, r: rec(c.id, w) });
     const kgs = W.map((x) => ({ w: x.w, v: avgW(x.r) })).filter((x) => x.v != null);
@@ -956,9 +974,9 @@
     if (kgs.length >= 2) {
       const a = kgs[0], b = kgs[kgs.length - 1];
       const per = (b.v - a.v) / (b.w - a.w);
-      const proj = a.v + per * (WEEKS - a.w);
+      const proj = a.v + per * (s.n - a.w);
       const g = goalDelta(c.goal || (c.intake && c.intake.answers && c.intake.answers.goal_12w));
-      let txt = `週あたり ${sign(per, 2)}kg。このペースなら12週目は約${proj.toFixed(1)}kg（${sign(proj - a.v)}kg）。`;
+      let txt = `週あたり ${sign(per, 2)}kg。このペースなら${s.n}週目は約${proj.toFixed(1)}kg（${sign(proj - a.v)}kg）。`;
       if (g != null) txt += (proj - a.v) <= g ? `目標（${sign(g, 0)}kg）に届く見込みです。` : `目標（${sign(g, 0)}kg）には届かない見込みです。`;
       out.push({ level: g != null && (proj - a.v) > g ? 'warn' : 'info', title: '体重のペース', text: txt });
       const p2 = kgs[kgs.length - 2];
@@ -1006,7 +1024,7 @@
     }
     if (c.renewIntent) {
       out.push({ level: c.renewIntent === '今回で終了' ? 'info' : 'good', title: `継続の希望：${c.renewIntent}`,
-        text: c.renewIntent === '続けたい' ? '最終評価で次の12週の提案をしましょう。' : c.renewIntent === '相談したい' ? '最終評価で一緒に決めましょう。' : '最終評価で、これからの過ごし方を伝えましょう。' });
+        text: c.renewIntent === '続けたい' ? `最終評価で次の${nW(c)}週の提案をしましょう。` : c.renewIntent === '相談したい' ? '最終評価で一緒に決めましょう。' : '最終評価で、これからの過ごし方を伝えましょう。' });
     }
     return out;
   }
@@ -1049,7 +1067,7 @@
     const c = state.clients.find((x) => x.id === id);
     const s = c && sched(c);
     if (!c || !s || s.cur < 1) { location.hash = c ? '#/c/' + encodeURIComponent(id) : '#/'; return; }
-    const w = Math.min(s.cur, WEEKS);
+    const w = Math.min(s.cur, s.n);
     const r = rec(c.id, w) || {};
     $app.innerHTML = `
       ${navbar({ title: '週間レポート', back: '#/c/' + encodeURIComponent(id), backLabel: '戻る', solid: true })}
@@ -1100,7 +1118,7 @@
   /** 最初の写真と最新の写真を並べる */
   function compareGroup(c) {
     const ws = [];
-    for (let w = 1; w <= WEEKS; w++) { const r = rec(c.id, w); if (r && r.photos && Object.keys(r.photos).length) ws.push({ w, p: r.photos }); }
+    for (let w = 1; w <= nW(c); w++) { const r = rec(c.id, w); if (r && r.photos && Object.keys(r.photos).length) ws.push({ w, p: r.photos }); }
     if (ws.length < 2) return '';
     const a = ws[0], b = ws[ws.length - 1];
     const slot = ['front', 'side', 'back'].find((k) => a.p[k] && b.p[k]);
@@ -1115,6 +1133,7 @@
   function renderWeekEdit(id, w) {
     const c = state.clients.find((x) => x.id === id);
     if (!c) { location.hash = '#/'; return; }
+    if (w > nW(c)) { location.hash = '#/c/' + encodeURIComponent(id); return; }
     const s = sched(c);
     const r = rec(c.id, w) || {};
     const weights = (r.weights || []).slice();
@@ -1131,7 +1150,7 @@
           r.trainDays || r.mealsSent || r.videosSent ? kv('回数', `トレーニング ${r.trainDays || 0}日・食事記録 ${r.mealsSent || 0}日・動画 ${r.videosSent || 0}本`) : '',
           r.measures && Object.keys(r.measures).length ? kv('サイズ', [r.measures.waist ? `ウエスト ${r.measures.waist}cm` : '', r.measures.hip ? `ヒップ ${r.measures.hip}cm` : '', r.measures.bodyFat ? `体脂肪率 ${r.measures.bodyFat}%` : ''].filter(Boolean).join('<br>')) : '',
           r.nextMeeting ? kv('来週の面談の希望', esc(r.nextMeeting)) : '',
-          r.reflection ? `<div class="cell"><span class="cell-main"><span class="s">12週間をふり返って</span><span class="t">${esc(r.reflection)}</span></span></div>` : '',
+          r.reflection ? `<div class="cell"><span class="cell-main"><span class="s">${nW(c)}週間をふり返って</span><span class="t">${esc(r.reflection)}</span></span></div>` : '',
           r.renewIntent ? kv('継続の希望', esc(r.renewIntent), 'strong') : '',
           r.clientWin ? `<div class="cell"><span class="cell-main"><span class="s">うまくいったこと</span><span class="t">${esc(r.clientWin)}</span></span></div>` : '',
           r.clientNote ? `<div class="cell"><span class="cell-main"><span class="s">困っていること・質問</span><span class="t">${esc(r.clientNote)}</span></span></div>` : '',
@@ -1194,6 +1213,7 @@
   // ================================================================ 追加・編集
 
   function renderNew() {
+    const P = {};
     $app.innerHTML = `
       ${navbar({ title: 'お客様を追加', back: '#/', backLabel: 'キャンセル', solid: true })}
       <main class="page">
@@ -1203,6 +1223,10 @@
             <label class="cell"><span class="lab">LINE名</span><input type="text" name="lineName" autocomplete="off" placeholder="必須"></label>
             <label class="cell"><span class="cell-main"><span class="t">入金確認日</span></span><input type="date" name="paidDate" value="${fd(today())}"></label>`,
             '入金を確認したお客様を登録します。追加すると、事前ヒアリングのリンクと案内文ができます。開始日とチェックイン曜日は、あとで決めて入れてください。')}
+          ${group('プラン', `<label class="cell"><span class="lab">プラン名</span><input type="text" name="planName" value="${esc(P.planName || '')}" placeholder="${esc(DEF.plan)}" autocomplete="off"></label>
+            <label class="cell"><span class="lab">期間</span><span class="unit"><input type="number" name="planWeeks" value="${nW(P)}" min="4" max="${MAX_WEEKS}" step="1" inputmode="numeric">週</span></label>
+            <label class="cell"><span class="lab">料金（税込）</span><span class="unit"><input type="number" name="price" value="${priceOf(P)}" min="0" step="1000" inputmode="numeric">円</span></label>`,
+            `標準は ${esc(DEF.plan)}・税込${DEF.price.toLocaleString('ja-JP')}円。お客様ごとに変えられます。`)}
           <p class="err" id="editErr"></p>
           <div class="btns"><button class="btn filled" type="submit">追加</button></div>
         </form>
@@ -1215,10 +1239,12 @@
       const name = f.name.value.trim(), lineName = f.lineName.value.trim();
       if (!name || !lineName) { err.textContent = '名前とLINE名を入力してください。'; (name ? f.lineName : f.name).focus(); return; }
       if (!f.paidDate.value) { err.textContent = '入金確認日を入れてください。'; return; }
+      const plan = planInput(f, err);
+      if (!plan) return;
       const btn = f.querySelector('[type="submit"]');
       btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
       try {
-        const d = await api('saveClient', { client: { name, lineName, paidDate: f.paidDate.value, status: ST.ACTIVE } });
+        const d = await api('saveClient', { client: Object.assign({ name, lineName, paidDate: f.paidDate.value, status: ST.ACTIVE }, plan) });
         state.clients.push(d.client);
         saveCache();
         toast('追加しました。リンクをLINEで送ってください');
@@ -1228,9 +1254,18 @@
     setTimeout(() => f.name.focus(), 50);
   }
 
+  /** プラン欄の入力を読む（おかしければ err に出して null） */
+  function planInput(f, err) {
+    const weeks = Number(f.planWeeks.value), price = Number(f.price.value);
+    if (!Number.isInteger(weeks) || weeks < 4 || weeks > MAX_WEEKS) { err.textContent = `期間は4〜${MAX_WEEKS}週で入れてください。`; f.planWeeks.focus(); return null; }
+    if (f.price.value === '' || !Number.isInteger(price) || price < 0) { err.textContent = '料金を円で入れてください（例：330000）。'; f.price.focus(); return null; }
+    return { planName: f.planName.value.trim(), planWeeks: weeks, price };
+  }
+
   function renderEdit(id) {
     const c = state.clients.find((x) => x.id === id);
     if (!c) { location.hash = '#/'; return; }
+    const P = c;
     const dowOpts = (sel) => '<option value="">未設定</option>' + DOW.map((d, i) => `<option value="${i}"${String(sel) === String(i) ? ' selected' : ''}>${d}曜</option>`).join('');
     $app.innerHTML = `
       ${navbar({ title: '編集', back: '#/c/' + encodeURIComponent(id), backLabel: 'キャンセル', solid: true })}
@@ -1243,6 +1278,10 @@
             <label class="cell"><span class="cell-main"><span class="t">開始日</span></span><input type="date" name="startDate" value="${esc(c.startDate)}"></label>
             <label class="cell"><span class="lab">チェックイン曜日</span><select name="checkinDow">${dowOpts(c.checkinDow)}</select></label>
             <label class="cell"><span class="lab">面談曜日</span><select name="meetingDow">${dowOpts(c.meetingDow)}</select></label>`, '<span id="endHint"></span>')}
+          ${group('プラン', `<label class="cell"><span class="lab">プラン名</span><input type="text" name="planName" value="${esc(P.planName || '')}" placeholder="${esc(DEF.plan)}" autocomplete="off"></label>
+            <label class="cell"><span class="lab">期間</span><span class="unit"><input type="number" name="planWeeks" value="${nW(P)}" min="4" max="${MAX_WEEKS}" step="1" inputmode="numeric">週</span></label>
+            <label class="cell"><span class="lab">料金（税込）</span><span class="unit"><input type="number" name="price" value="${priceOf(P)}" min="0" step="1000" inputmode="numeric">円</span></label>`,
+            `標準は ${esc(DEF.plan)}・税込${DEF.price.toLocaleString('ja-JP')}円。お客様ごとに変えられます。`)}
           ${group('', `<label class="cell"><span class="lab">状態</span><select name="status">${STATUSES.map((s) => `<option${s === c.status ? ' selected' : ''}>${s}</option>`).join('')}</select></label>`)}
           ${group('目標', `<div class="cell"><textarea name="goal" rows="2" placeholder="目標" aria-label="目標">${esc(c.goal)}</textarea></div>`)}
           ${group('メモ', `<div class="cell"><textarea name="memo" rows="3" placeholder="メモ" aria-label="メモ">${esc(c.memo)}</textarea></div>`)}
@@ -1253,20 +1292,24 @@
     const f = document.getElementById('editForm');
     const endHint = () => {
       const st = pd(f.startDate.value);
-      document.getElementById('endHint').textContent = st ? `終了予定日：${mdw(addDays(st, WEEKS * 7 - 1))}（12週）` : '開始日を入れると、終了予定日と毎週の予定が自動で出ます。';
+      const n = Number(f.planWeeks.value);
+      const ok = Number.isInteger(n) && n >= 4 && n <= MAX_WEEKS;
+      document.getElementById('endHint').textContent = st && ok ? `終了予定日：${mdw(addDays(st, n * 7 - 1))}（${n}週）` : '開始日を入れると、終了予定日と毎週の予定が自動で出ます。';
     };
     endHint();
     f.addEventListener('input', (e) => {
       state.dirty = true;
-      if (e.target.name === 'startDate') endHint();
+      if (e.target.name === 'startDate' || e.target.name === 'planWeeks') endHint();
     });
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const err = document.getElementById('editErr');
       const name = f.name.value.trim();
       if (!name) { err.textContent = '名前を入力してください。'; return; }
-      const data = { id: c.id, name, lineName: f.lineName.value.trim(), paidDate: f.paidDate.value, startDate: f.startDate.value,
-        checkinDow: f.checkinDow.value, meetingDow: f.meetingDow.value, goal: f.goal.value, status: f.status.value, memo: f.memo.value };
+      const plan = planInput(f, err);
+      if (!plan) return;
+      const data = Object.assign({ id: c.id, name, lineName: f.lineName.value.trim(), paidDate: f.paidDate.value, startDate: f.startDate.value,
+        checkinDow: f.checkinDow.value, meetingDow: f.meetingDow.value, goal: f.goal.value, status: f.status.value, memo: f.memo.value }, plan);
       const btn = f.querySelector('[type="submit"]');
       btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
       try {
@@ -1321,7 +1364,7 @@
         if (act === 'tg-final') { const old = c.finalDone || ''; await patchClient(c.id, { finalDone: old ? '' : t }); undo = () => patchClient(c.id, { finalDone: old }); label = old ? '最終評価を未にしました' : '最終評価を済にしました'; }
         if (act === 'tg-renew') {
           el.disabled = false;
-          if (!confirm(`${san(c.name)}の更新の入金を確認しましたか？\n今の期間は「これまでの期間」に移り、次の12週が始まります。`)) return;
+          if (!confirm(`${san(c.name)}の更新の入金を確認しましたか？\n今の期間は「これまでの期間」に移り、次の${nW(c)}週が始まります。`)) return;
           const d = await api('renewClient', { id: c.id, paidDate: t });
           const i = state.clients.findIndex((x) => x.id === c.id);
           if (i >= 0) state.clients[i] = d.client;
