@@ -150,6 +150,8 @@ button { background: none; border: 0; cursor: pointer; }
   "subtitle": "",
   "accent": "#e0ad74",
   "checkinUrl": "",
+  "api": "",
+  "planId": "",
   "days": [],
   "diet": [],
   "cardio": [],
@@ -161,7 +163,8 @@ button { background: none; border: 0; cursor: pointer; }
   'use strict';
 
   // 畠山コーチング｜お客様のプラン（1ファイルで完結。Netlify にドラッグ＆ドロップで公開）
-  // 中身は下の <script id="plan-data"> の JSON。ページ下の「編集（コーチ用）」で書き換えて「HTMLを書き出す」→ 同じサイトにアップロードすると上書きされる。
+  // 中身は下の <script id="plan-data"> の JSON。保存先（Google Apps Script の URL＝api と planId）があれば、開くたびにそこから最新を読む。
+  // 「編集」→ パスワード（GAS 側で照合）→「保存」で、お客様のページにもそのまま反映される。
 
   const SRC = '<!doctype html>\n' + document.documentElement.outerHTML; // 書き出し用（描画前の状態）
   const $app = document.getElementById('app');
@@ -170,6 +173,10 @@ button { background: none; border: 0; cursor: pointer; }
   const DONE_KEY = (d) => `hk_done_${slug}_${d}_${new Date().toISOString().slice(0, 10)}`;
   let tab = 'train';
   let dayIdx = 0;
+  const CONN = { api: plan.api || '', planId: plan.planId || '' }; // 保存先は HTML に埋め込んだものを使う
+  const hasApi = () => /^https:\/\/script\.google\.com\//.test(CONN.api) && /^[a-z0-9_-]{1,40}$/.test(CONN.planId);
+  const CACHE = `hk_plan_${CONN.planId || slug}`;
+  let password = null; // 編集中だけメモリに持つ（保存しない）
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
@@ -281,8 +288,66 @@ button { background: none; border: 0; cursor: pointer; }
       const y = window.scrollY; render(); window.scrollTo(0, y);
       return;
     }
-    if (t.dataset.act === 'edit') openEditor();
+    if (t.dataset.act === 'edit') askPassword();
   });
+
+  // ================================================================ 保存先（Google Apps Script）
+
+  const ERR = {
+    bad_password: 'パスワードが違います。', locked: '間違いが続いたので、15分ほど待ってからお試しください。',
+    not_configured: '保存先にパスワードが設定されていません（スクリプト プロパティ PLAN_PASSWORD）。',
+    too_large: '内容が大きすぎて保存できません。', busy: '混み合っています。もう一度お試しください。',
+    network: '通信できませんでした。電波の良い所でもう一度お試しください。',
+  };
+  const errMsg = (c) => ERR[c] || 'エラーが発生しました。時間をおいてもう一度お試しください。';
+
+  async function gas(body) {
+    let res;
+    try {
+      res = body
+        ? await fetch(CONN.api, { method: 'POST', body: JSON.stringify(Object.assign({ id: CONN.planId }, body)), redirect: 'follow' })
+        : await fetch(`${CONN.api}?id=${encodeURIComponent(CONN.planId)}`, { redirect: 'follow', cache: 'no-store' });
+    } catch (_) { throw new Error('network'); }
+    let d;
+    try { d = await res.json(); } catch (_) { throw new Error('network'); }
+    if (!d.ok) throw new Error(d.error || 'server');
+    return d;
+  }
+
+  /** 保存した最新版を読む（前回の分を先に出して、届いたら差し替える） */
+  async function load() {
+    if (!hasApi()) return;
+    try { const c = JSON.parse(lsGet(CACHE) || 'null'); if (c && c.plan) { plan = Object.assign(c.plan, CONN); render(); } } catch (_) { /* なくてもよい */ }
+    try {
+      const d = await gas();
+      if (!d.plan) return;
+      lsSet(CACHE, JSON.stringify({ plan: d.plan, at: d.updatedAt }));
+      if (document.querySelector('.ed')) return; // 編集中は差し替えない
+      plan = Object.assign(d.plan, CONN);
+      render();
+    } catch (_) { /* 読めなければ手元の内容のまま */ }
+  }
+
+  function askPassword() {
+    if (!hasApi() || password) return openEditor();
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = `<form><h2>編集</h2><p>コーチ用のパスワードを入れてください。</p>
+      <input type="password" name="pw" autocomplete="current-password" aria-label="パスワード" required>
+      <div class="err" hidden></div>
+      <div class="row"><button type="button" class="b" data-c>キャンセル</button><button class="b p" type="submit">開く</button></div></form>`;
+    document.body.appendChild(m);
+    const f = m.querySelector('form');
+    f.pw.focus();
+    m.querySelector('[data-c]').onclick = () => m.remove();
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const er = m.querySelector('.err'), btn = f.querySelector('[type=submit]');
+      btn.disabled = true; btn.textContent = '確認中…';
+      try { await gas({ action: 'check', password: f.pw.value }); password = f.pw.value; m.remove(); openEditor(); }
+      catch (ex) { er.hidden = false; er.textContent = errMsg(ex.message); btn.disabled = false; btn.textContent = '開く'; }
+    };
+  }
 
   // ================================================================ 編集（コーチ用）
 
@@ -307,7 +372,7 @@ button { background: none; border: 0; cursor: pointer; }
         <button type="button" class="b x w" data-del="${k}.${i}">このブロックを削除</button></div>`).join('')}
       <button type="button" class="b w" data-add="${k}">＋ ${title}のブロックを追加</button>`;
     ed.innerHTML = `
-      <div class="ed-bar"><button type="button" class="b" data-close>閉じる</button><b>編集</b><button type="button" class="b p" data-save>反映</button></div>
+      <div class="ed-bar"><button type="button" class="b" data-close>閉じる</button><b>編集</b><button type="button" class="b p" data-save>${hasApi() ? '保存' : '反映'}</button></div>
       <div class="ed-in">
         <h3>基本</h3><div class="box">
           ${fld('お名前（「○○様のプラン」に使います）', 'name', draft.name)}
@@ -316,6 +381,10 @@ button { background: none; border: 0; cursor: pointer; }
           <label>アクセントの色</label><input type="color" data-p="accent" value="${esc(draft.accent || '#e0ad74')}">
           ${fld('チェックインのリンク（任意・https://〜）', 'checkinUrl', draft.checkinUrl || '', 'url')}
         </div>
+        ${hasApi() ? '' : `<h3>保存先（最初の1回だけ）</h3><div class="box">
+          ${fld('Google Apps Script のウェブアプリURL（https://script.google.com/macros/s/…/exec）', 'api', draft.api || '', 'url')}
+          ${fld('プランID（英小文字・数字・-。例：mizukami）', 'planId', draft.planId || '', 'text')}
+          <p class="hint">入れたら下の「HTMLを書き出す」→ Netlify にアップロード。次からは「保存」だけでお客様のページに反映されます。</p></div>`}
 
         <h3>テキストから取り込む</h3><div class="box">
           <textarea id="importText" rows="6" placeholder="Day1 (Push)&#10;・チェストプレス（胸）&#10;40kgx8回&#10;47kgx8回"></textarea>
@@ -340,9 +409,13 @@ button { background: none; border: 0; cursor: pointer; }
         ${blocks('diet', '食事')}
         ${blocks('cardio', '有酸素')}
         ${blocks('policy', '方針')}
-        <p class="hint">中身のない項目はお客様の画面に出ません。「反映」で画面に反映し、「HTMLを書き出す」で保存したファイルを Netlify の同じサイトにアップロードすると、お客様のページが上書きされます。</p>
+        ${hasApi()
+          ? `<p class="hint">中身のない項目はお客様の画面に出ません。「保存」でお客様のページにもすぐ反映されます。</p>
+        <button type="button" class="b p w" data-save style="min-height:50px">保存する</button>
+        <button type="button" class="b w" data-export style="min-height:50px">控えとして HTML を書き出す</button>`
+          : `<p class="hint">中身のない項目はお客様の画面に出ません。「HTMLを書き出す」で保存したファイルを Netlify の同じサイトにアップロードすると、お客様のページが上書きされます。</p>
         <button type="button" class="b w" data-save style="min-height:50px">反映して確認する</button>
-        <button type="button" class="b p w" data-export style="min-height:50px">反映して HTML を書き出す</button>
+        <button type="button" class="b p w" data-export style="min-height:50px">反映して HTML を書き出す</button>`}
       </div>`;
   }
 
@@ -424,6 +497,25 @@ button { background: none; border: 0; cursor: pointer; }
       toast(`${r.days.length}日・${r.days.reduce((n, d) => n + d.exercises.length, 0)}種目を取り込みました`);
       return;
     }
+    if (t.hasAttribute('data-save') && hasApi()) {
+      const saved = JSON.parse(JSON.stringify(draft));
+      delete saved.api; delete saved.planId;
+      const btns = ed.querySelectorAll('[data-save]');
+      btns.forEach((b) => { b.disabled = true; });
+      try {
+        const d = await gas({ action: 'save', password, plan: saved });
+        lsSet(CACHE, JSON.stringify({ plan: saved, at: d.updatedAt }));
+        plan = Object.assign(saved, CONN);
+        ed.remove();
+        render();
+        toast('保存しました。お客様のページにも反映されました');
+      } catch (ex) {
+        btns.forEach((b) => { b.disabled = false; });
+        if (ex.message === 'bad_password') password = null;
+        toast(errMsg(ex.message));
+      }
+      return;
+    }
     if (t.hasAttribute('data-save') || t.hasAttribute('data-export')) {
       plan = JSON.parse(JSON.stringify(draft));
       if (t.hasAttribute('data-export')) exportHtml();
@@ -449,6 +541,7 @@ button { background: none; border: 0; cursor: pointer; }
   // ================================================================ 起動
 
   render();
+  load();
 })();
 </script>
 </body>
