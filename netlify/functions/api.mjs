@@ -23,7 +23,7 @@ export default async (req, context) => {
 
   const out = await handle(body, {
     store: getStore({ name: storeName(context), consistency: 'strong' }),
-    env: { APP_PASSWORD: process.env.APP_PASSWORD, TOKEN_SECRET: process.env.TOKEN_SECRET, PLAN_PASSWORD: process.env.PLAN_PASSWORD },
+    env: { APP_PASSWORD: process.env.APP_PASSWORD, TOKEN_SECRET: process.env.TOKEN_SECRET },
   });
   return json(out);
 };

@@ -10,7 +10,6 @@
  * 環境変数（Netlify のサイト設定 → Environment variables）
  *   APP_PASSWORD … ログイン用パスワード
  *   TOKEN_SECRET … トークン署名用の秘密鍵（長いランダム文字列）
- *   PLAN_PASSWORD … お客様アプリの編集用パスワード（未設定なら APP_PASSWORD）
  */
 import crypto from 'node:crypto';
 
@@ -72,8 +71,6 @@ export async function handle(body, ctx) {
       case 'formIntake':        return await formIntake(body.key, body.answers, ctx.store);
       case 'formCheckin':       return await formCheckin(body.key, body.checkin, ctx.store);
       case 'formPhoto':         return await formPhoto(body.key, body.week, body.slot, body.data, ctx.store);
-      case 'planGet':           return await planGet(body.key, ctx.store);
-      case 'planSave':          return await planSave(body.key, body.password, body.plan, ctx);
     }
 
     if (!verifyToken(body.token, ctx.env.TOKEN_SECRET)) return { ok: false, error: 'unauthorized' };
@@ -321,61 +318,6 @@ async function formCheckin(key, input, store) {
     return d;
   });
   return { ok: true, submittedAt: doc.weeks[week].submittedAt };
-}
-
-// ---------------------------------------------------------------- お客様アプリ（プラン）
-
-/** お客様が見るプラン。鍵（お客様用リンク）で本人の分だけ読める */
-async function planGet(key, store) {
-  const id = await clientIdByKey(key, store);
-  const doc = await store.get('c/' + id, { type: 'json' });
-  if (!doc || !doc.client || doc.client.formKey !== key) throw new ApiError('invalid_link');
-  return { ok: true, name: doc.client.name, plan: doc.client.plan || null };
-}
-
-/** 編集用パスワードで上書き保存（パスワードの照合はサーバー側・失敗が続くとロック） */
-async function planSave(key, password, plan, { store, env }) {
-  const id = await clientIdByKey(key, store);
-  const expected = env.PLAN_PASSWORD || env.APP_PASSWORD;
-  const fails = (await store.get('_auth/plan_fails', { type: 'json' })) || { count: 0, until: 0 };
-  const now = Date.now();
-  if (fails.until > now && fails.count >= LOGIN_MAX_FAILS) throw new ApiError('locked');
-  if (typeof password !== 'string' || !safeEqual(sha256(password), sha256(expected))) {
-    await store.setJSON('_auth/plan_fails', fails.until > now ? { count: fails.count + 1, until: fails.until } : { count: 1, until: now + LOGIN_LOCK_MS });
-    await new Promise((res) => setTimeout(res, 800));
-    throw new ApiError('bad_password');
-  }
-  if (plan === undefined) return { ok: true }; // パスワードの確認だけ
-  const clean = cleanPlan(plan);
-  await update(store, id, (d) => {
-    if (d.client.formKey !== key) throw new ApiError('invalid_link');
-    d.client = { ...d.client, plan: { ...clean, updatedAt: new Date().toISOString() }, updatedAt: new Date().toISOString() };
-    return d;
-  });
-  return { ok: true };
-}
-
-function cleanPlan(p) {
-  if (!p || typeof p !== 'object') throw new ApiError('bad_request');
-  const t = (v, n = 2000) => String(v == null ? '' : v).slice(0, n);
-  const arr = (v, n) => (Array.isArray(v) ? v.slice(0, n) : []);
-  const blocks = (v) => arr(v, 30).map((b) => ({ title: t(b && b.title, 200), body: t(b && b.body, 4000) })).filter((b) => b.title || b.body);
-  const out = {
-    title: t(p.title, 120), subtitle: t(p.subtitle, 300),
-    accent: /^#[0-9a-fA-F]{6}$/.test(p.accent || '') ? p.accent : '',
-    days: arr(p.days, 10).map((d) => ({
-      name: t(d && d.name, 40), focus: t(d && d.focus, 80),
-      exercises: arr(d && d.exercises, 30).map((e) => ({
-        name: t(e && e.name, 120), note: t(e && e.note, 300),
-        sets: arr(e && e.sets, 20).map((x) => t(x, 120)).filter(Boolean),
-        video: /^https:\/\//.test(String((e && e.video) || '')) ? t(e.video, 500) : '',
-        tip: t(e && e.tip, 600),
-      })).filter((e) => e.name),
-    })).filter((d) => d.name || d.exercises.length),
-    diet: blocks(p.diet), cardio: blocks(p.cardio), policy: blocks(p.policy),
-  };
-  if (JSON.stringify(out).length > 120000) throw new ApiError('bad_request');
-  return out;
 }
 
 /** チェックインの写真を1枚保存（同じ枠は上書き） */

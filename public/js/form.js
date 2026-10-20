@@ -228,7 +228,6 @@
         <p>${esc(c.name)}さん、今週もおつかれさまです。</p>
         <p>${cur > WEEKS ? '12週間のプログラムは終了しました。最終週の記録はこちらから送れます。' : `今日は <b>12週間のうち${cur}週目</b> です。`}${ciDow != null && cur <= WEEKS ? `チェックインは毎週${DOW[ciDow]}曜日が目安です。` : ''}</p>
         <p class="muted">所要時間の目安：3分。体調以外は、分かる範囲で大丈夫です。</p>
-        <p><a class="f-applink" href="/app.html#${esc(key)}">あなたのプラン（トレーニング）を見る ›</a></p>
       </section>
       <div class="week-tabs f-weeks">${tabs.join('')}</div>
       <form id="checkin" novalidate>

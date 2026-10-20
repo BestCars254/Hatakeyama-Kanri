@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0b0b0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="プラン">
+<title>プラン</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0b0d'/%3E%3Cpath d='M7 16h18M10 11v10M22 11v10M5 13v6M27 13v6' stroke='%23e0ad74' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+/* お客様アプリ（RafaCoach のお客様アプリと同じ作り：暗い背景・1色のアクセント・大きなカード・下のナビ） */
+:root {
+  --bg: #0b0b0d;
+  --card: #141418;
+  --card-2: #1c1c22;
+  --line: rgba(255, 255, 255, .08);
+  --line-2: rgba(255, 255, 255, .14);
+  --ink: #f4f1ee;
+  --muted: #a39d97;
+  --dim: #6f6a66;
+  --accent: #e0ad74;
+  --accent-bright: #f6cf9f;
+  --accent-deep: #a8733d;
+  --on-accent: #1f1206;
+  --radius: 20px;
+  color-scheme: dark;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--bg); color: var(--ink); min-height: 100vh; line-height: 1.5; font-size: 15px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic UI', Meiryo, sans-serif;
+  background-image: radial-gradient(120% 50% at 50% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%);
+  background-attachment: fixed; -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; cursor: pointer; }
+[hidden] { display: none !important; }
+.wrap { max-width: 520px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right)) calc(110px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+.loading { padding: 40vh 0; text-align: center; color: var(--muted); }
+
+/* ヘッダー */
+.hd { text-align: center; padding: calc(22px + env(safe-area-inset-top)) 0 10px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .2em; font-size: 12.5px; }
+.brand svg { width: 22px; height: 22px; color: var(--accent); }
+.brand b { color: var(--accent-bright); }
+.hd h1 { font-size: 28px; font-weight: 800; letter-spacing: .01em; margin-top: 12px; line-height: 1.25; }
+.hd p { color: var(--muted); font-size: 13.5px; margin-top: 6px; white-space: pre-wrap; }
+
+/* 日のタブ */
+.days { display: grid; gap: 8px; margin: 18px 0 12px; }
+.day { padding: 11px 4px 10px; border-radius: 15px; border: 1px solid var(--line); background: var(--card); text-align: center; transition: .18s; }
+.day b { display: block; font-size: 19px; font-weight: 800; color: var(--muted); line-height: 1.15; }
+.day span { display: block; font-size: 10.5px; font-weight: 700; color: var(--dim); letter-spacing: .04em; margin-top: 3px; text-transform: uppercase; }
+.day.on { border-color: transparent; background: linear-gradient(160deg, var(--accent-deep), var(--accent)); box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--accent) 70%, transparent); }
+.day.on b, .day.on span { color: var(--on-accent); }
+.day:active { transform: scale(.96); }
+
+/* 進み具合 */
+.meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); margin-bottom: 14px; }
+.meta .f { font-weight: 800; font-size: 16px; }
+.meta .f small { display: block; font-size: 11.5px; color: var(--muted); font-weight: 700; letter-spacing: .04em; }
+.prog { text-align: right; min-width: 84px; }
+.prog b { font-size: 20px; color: var(--accent-bright); font-weight: 800; }
+.prog small { display: block; font-size: 10.5px; color: var(--dim); font-weight: 700; }
+.bar { height: 5px; border-radius: 9px; background: rgba(255, 255, 255, .08); margin-top: 6px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-deep), var(--accent-bright)); border-radius: 9px; transition: width .3s; }
+
+/* 種目のカード */
+.list { display: flex; flex-direction: column; gap: 14px; }
+.ex { position: relative; overflow: hidden; border: 1px solid var(--line); background: var(--card); border-radius: var(--radius); padding: 16px 16px 16px 20px; box-shadow: 0 10px 30px -14px rgba(0, 0, 0, .8); transition: opacity .2s; }
+.ex::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(var(--accent-bright), var(--accent-deep)); }
+.ex.done { opacity: .55; }
+.ex-top { display: flex; gap: 12px; align-items: flex-start; }
+.num { flex: none; width: 36px; height: 36px; border-radius: 11px; border: 1.5px solid var(--line-2); display: grid; place-items: center; font-weight: 800; font-size: 16px; color: var(--accent-bright); transition: .18s; }
+.ex.done .num { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.num:active { transform: scale(.9); }
+.ex h3 { font-size: 18px; font-weight: 800; line-height: 1.35; padding-top: 4px; }
+.tag { display: inline-block; margin-top: 6px; padding: 2px 9px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-bright); font-size: 12px; font-weight: 700; }
+.sets { display: grid; gap: 6px; margin-top: 14px; }
+.set { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card-2); font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+.set span:first-child { flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-size: 11px; color: var(--muted); background: rgba(255, 255, 255, .06); }
+.vbtn { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; min-height: 50px; border-radius: 14px; font-weight: 800; color: var(--on-accent); background: linear-gradient(90deg, var(--accent-bright), var(--accent)); }
+.tip { margin-top: 12px; font-size: 14px; line-height: 1.6; }
+.tip b { display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 5px; font-size: 11px; background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent-bright); }
+
+/* 文章のブロック（食事・方針など） */
+.blk { border: 1px solid var(--line); background: var(--card); border-radius: var(--radius); padding: 18px; margin-top: 14px; }
+.blk h2 { font-size: 17px; font-weight: 800; color: var(--accent-bright); margin-bottom: 10px; }
+.blk p { white-space: pre-wrap; word-break: break-word; line-height: 1.7; }
+.blk ul { list-style: none; display: grid; gap: 8px; }
+.blk li { display: flex; gap: 10px; line-height: 1.6; }
+.blk li::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-top: .65em; }
+.empty { margin-top: 18px; padding: 28px 18px; text-align: center; color: var(--muted); border: 1px dashed var(--line-2); border-radius: var(--radius); }
+
+/* 下のナビ */
+.bn { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px;
+  padding: 8px max(10px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  background: rgba(11, 11, 13, .92); border-top: 1px solid var(--line); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.bn button, .bn a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0; border-radius: 14px; font-size: 11.5px; font-weight: 700; color: var(--dim); }
+.bn svg { width: 22px; height: 22px; }
+.bn .on { color: var(--on-accent); background: linear-gradient(160deg, var(--accent-deep), var(--accent)); }
+.foot { text-align: center; margin-top: 30px; font-size: 12px; color: var(--dim); }
+.foot button { color: var(--muted); text-decoration: underline; font-size: 12px; padding: 8px; }
+
+/* 編集 */
+.ed { position: fixed; inset: 0; z-index: 60; overflow-y: auto; background: var(--bg); }
+.ed-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: rgba(11, 11, 13, .95); border-bottom: 1px solid var(--line); }
+.ed-bar b { font-size: 16px; }
+.ed-in { max-width: 560px; margin: 0 auto; padding: 8px 16px calc(40px + env(safe-area-inset-bottom)); }
+.ed h3 { margin: 22px 0 8px; font-size: 13px; color: var(--muted); letter-spacing: .06em; }
+.ed .box { border: 1px solid var(--line); background: var(--card); border-radius: 16px; padding: 14px; margin-top: 10px; }
+.ed .box .box { background: var(--card-2); }
+.ed label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; font-weight: 700; }
+.ed label:first-child { margin-top: 0; }
+.ed input[type=text], .ed input[type=url], .ed input[type=password], .ed textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: #0f0f13; font-size: 16px; }
+.ed textarea { min-height: 80px; resize: vertical; line-height: 1.5; }
+.ed input[type=color] { width: 56px; height: 40px; border: 0; background: none; }
+.ed .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.b { min-height: 40px; padding: 0 14px; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card-2); font-weight: 700; font-size: 14px; }
+.b.p { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.b.x { color: #ff9b8a; border-color: rgba(255, 155, 138, .35); background: transparent; }
+.b.w { width: 100%; margin-top: 10px; }
+.hint { font-size: 12px; color: var(--dim); margin-top: 6px; line-height: 1.5; }
+
+.modal { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: rgba(0, 0, 0, .6); padding: 20px; }
+.modal form { width: 100%; max-width: 340px; background: var(--card); border: 1px solid var(--line-2); border-radius: 20px; padding: 20px; }
+.modal h2 { font-size: 18px; margin-bottom: 4px; }
+.modal p { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.modal input { width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: #0f0f13; font-size: 16px; }
+.modal .row { display: flex; gap: 8px; margin-top: 14px; }
+.modal .row .b { flex: 1; min-height: 46px; }
+.err { color: #ff9b8a; font-size: 13px; margin-top: 8px; }
+.toast { position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 80; width: max-content; max-width: calc(100vw - 32px); padding: 11px 16px; border-radius: 14px; background: var(--ink); color: var(--bg); font-weight: 700; font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app"><div class="loading">読み込み中…</div></div>
+<div id="toast" class="toast" role="status" hidden></div>
+<noscript>このページを使うには JavaScript を有効にしてください。</noscript>
+<script id="plan-data" type="application/json">
+{
+  "name": "",
+  "title": "",
+  "subtitle": "",
+  "accent": "#e0ad74",
+  "checkinUrl": "",
+  "pwHash": "0e4f7b561e45d5c660d8c767da72d0b4317c4bc2e8620424bf1b6a61c69b932c",
+  "days": [],
+  "diet": [],
+  "cardio": [],
+  "policy": []
+}
+</script>
+<script>
+(function () {
+  'use strict';
+
+  // 畠山コーチング｜お客様のプラン（1ファイルで完結。Netlify にドラッグ＆ドロップで公開）
+  // 中身は下の <script id="plan-data"> の JSON。ページ下の「編集（コーチ用）」で書き換えて「HTMLを書き出す」→ 同じサイトにアップロードすると上書きされる。
+
+  const SRC = '<!doctype html>\n' + document.documentElement.outerHTML; // 書き出し用（描画前の状態）
+  const $app = document.getElementById('app');
+  let plan = JSON.parse(document.getElementById('plan-data').textContent);
+  const slug = encodeURIComponent(plan.name || 'plan');
+  const DONE_KEY = (d) => `hk_done_${slug}_${d}_${new Date().toISOString().slice(0, 10)}`;
+  let tab = 'train';
+  let dayIdx = 0;
+  let unlocked = false;
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* なくても動く */ } }
+  async function sha256(t) {
+    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
+    return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+  }
+
+  let toastT = null;
+  function toast(msg) { const el = document.getElementById('toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 3200); }
+
+  const IC = {
+    logo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M8 8v8M16 8v8M3 10v4M21 10v4"/></svg>',
+    train: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M8 8v8M16 8v8M3 10v4M21 10v4"/></svg>',
+    diet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 21V3c-2 1-3 4-3 7h3"/></svg>',
+    cardio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
+    policy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8" fill="currentColor"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12.3 2.4 2.4 4.6-5"/></svg>',
+    play: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>',
+  };
+
+  // ================================================================ 表示
+
+  function applyAccent(hex) {
+    if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return;
+    const r = document.documentElement.style;
+    r.setProperty('--accent', hex);
+    r.setProperty('--accent-bright', `color-mix(in srgb, ${hex} 70%, white)`);
+    r.setProperty('--accent-deep', `color-mix(in srgb, ${hex} 70%, black)`);
+  }
+
+  function tabsOf(p) {
+    const t = [];
+    if (p && p.days && p.days.length) t.push(['train', 'トレーニング', IC.train]);
+    if (p && p.diet && p.diet.length) t.push(['diet', '食事', IC.diet]);
+    if (p && p.cardio && p.cardio.length) t.push(['cardio', '有酸素', IC.cardio]);
+    if (p && p.policy && p.policy.length) t.push(['policy', '方針', IC.policy]);
+    return t;
+  }
+
+  /** 文章：行頭が「・」の行は箇条書きにする */
+  function textBlock(body) {
+    const lines = String(body || '').split('\n');
+    const out = [];
+    let ul = [];
+    const flush = () => { if (ul.length) { out.push(`<ul>${ul.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`); ul = []; } };
+    for (const l of lines) {
+      const m = /^\s*[・•\-]\s*(.+)$/.exec(l);
+      if (m) ul.push(m[1]);
+      else { flush(); if (l.trim()) out.push(`<p>${esc(l)}</p>`); }
+    }
+    flush();
+    return out.join('');
+  }
+
+  function render() {
+    const p = plan;
+    applyAccent(p && p.accent);
+    const tabs = tabsOf(p);
+    if (tabs.length && !tabs.some((t) => t[0] === tab)) tab = tabs[0][0];
+    document.title = (p && p.title) || `${plan.name}様のプラン`;
+    let body = '';
+    if (!tabs.length) {
+      body = '<div class="empty">プランは準備中です。<br>できあがったら、このページに表示されます。</div>';
+    } else if (tab === 'train') {
+      const days = p.days;
+      if (dayIdx >= days.length) dayIdx = 0;
+      const d = days[dayIdx];
+      let done = [];
+      try { done = JSON.parse(lsGet(DONE_KEY(dayIdx)) || '[]'); } catch (_) { done = []; }
+      const n = d.exercises.length;
+      const k = d.exercises.filter((_, i) => done.includes(i)).length;
+      body = `
+        <div class="days" style="grid-template-columns:repeat(${Math.min(days.length, 5)},1fr)">${days.map((x, i) =>
+          `<button type="button" class="day${i === dayIdx ? ' on' : ''}" data-day="${i}"><b>${esc(x.name || 'Day' + (i + 1))}</b><span>${esc(x.focus || '')}</span></button>`).join('')}</div>
+        <div class="meta"><div class="f">${esc([d.name, d.focus].filter(Boolean).join('（') + (d.focus && d.name ? '）' : ''))}<small>${n}種目</small></div>
+          <div class="prog"><b>${k}/${n}</b><small>完了</small><div class="bar"><i style="width:${n ? (k / n * 100).toFixed(0) : 0}%"></i></div></div></div>
+        <div class="list">${d.exercises.map((e, i) => `
+          <article class="ex${done.includes(i) ? ' done' : ''}">
+            <div class="ex-top"><button type="button" class="num" data-ex="${i}" aria-label="${i + 1}番目を${done.includes(i) ? '未完了' : '完了'}にする">${done.includes(i) ? '✓' : i + 1}</button>
+              <div><h3>${esc(e.name)}</h3>${e.note ? `<span class="tag">${esc(e.note)}</span>` : ''}</div></div>
+            ${e.sets.length ? `<div class="sets">${e.sets.map((s, j) => `<div class="set"><span>${j + 1}</span><span>${esc(s)}</span></div>`).join('')}</div>` : ''}
+            ${e.video ? `<a class="vbtn" href="${esc(e.video)}" target="_blank" rel="noopener noreferrer">${IC.play}動画を見る</a>` : ''}
+            ${e.tip ? `<p class="tip"><b>ポイント</b>${esc(e.tip)}</p>` : ''}
+          </article>`).join('')}</div>
+        <p class="foot">番号をタップすると「完了」になります（その日のうちだけ記録）。</p>`;
+    } else {
+      body = (p[tab] || []).map((b) => `<section class="blk">${b.title ? `<h2>${esc(b.title)}</h2>` : ''}${textBlock(b.body)}</section>`).join('');
+    }
+    $app.innerHTML = `
+      <div class="wrap">
+        <header class="hd"><span class="brand">${IC.logo}HATAKEYAMA <b>COACHING</b></span>
+          <h1>${esc((p && p.title) || `${plan.name}様のプラン`)}</h1>${p && p.subtitle ? `<p>${esc(p.subtitle)}</p>` : ''}</header>
+        ${body}
+        <p class="foot"><button type="button" data-act="edit">編集（コーチ用）</button></p>
+      </div>
+      <nav class="bn">${tabs.map(([k, l, ic]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-tab="${k}">${ic}<span>${l}</span></button>`).join('')}
+        ${p && /^https:\/\//.test(p.checkinUrl || '') ? `<a href="${esc(p.checkinUrl)}" target="_blank" rel="noopener noreferrer">${IC.check}<span>チェックイン</span></a>` : ''}</nav>`;
+  }
+
+  $app.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab],[data-day],[data-ex],[data-act]');
+    if (!t) return;
+    if (t.dataset.tab) { tab = t.dataset.tab; render(); window.scrollTo(0, 0); return; }
+    if (t.dataset.day) { dayIdx = Number(t.dataset.day); render(); return; }
+    if (t.dataset.ex) {
+      let done = [];
+      try { done = JSON.parse(lsGet(DONE_KEY(dayIdx)) || '[]'); } catch (_) { done = []; }
+      const i = Number(t.dataset.ex);
+      done = done.includes(i) ? done.filter((x) => x !== i) : [...done, i];
+      lsSet(DONE_KEY(dayIdx), JSON.stringify(done));
+      const y = window.scrollY; render(); window.scrollTo(0, y);
+      return;
+    }
+    if (t.dataset.act === 'edit') askPassword();
+  });
+
+  // ================================================================ 編集（コーチ用）
+
+  function askPassword() {
+    if (unlocked) return openEditor();
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = `<form><h2>編集</h2><p>コーチ用のパスワードを入れてください。</p>
+      <input type="password" name="pw" autocomplete="current-password" aria-label="パスワード">
+      <div class="err" hidden></div>
+      <div class="row"><button type="button" class="b" data-c>キャンセル</button><button class="b p" type="submit">開く</button></div></form>`;
+    document.body.appendChild(m);
+    const f = m.querySelector('form');
+    f.pw.focus();
+    m.querySelector('[data-c]').onclick = () => m.remove();
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const er = m.querySelector('.err');
+      if (await sha256(f.pw.value) === plan.pwHash) { unlocked = true; m.remove(); openEditor(); }
+      else { er.hidden = false; er.textContent = 'パスワードが違います。'; }
+    };
+  }
+
+  let draft = null;
+
+
+  function openEditor() {
+    draft = JSON.parse(JSON.stringify(plan));
+    for (const k of ['days', 'diet', 'cardio', 'policy']) draft[k] = draft[k] || [];
+    let ed = document.querySelector('.ed');
+    if (!ed) { ed = document.createElement('div'); ed.className = 'ed'; document.body.appendChild(ed); }
+    drawEditor();
+  }
+
+  const fld = (label, path, val, type) => `<label>${label}</label>${type === 'area'
+    ? `<textarea data-p="${path}" rows="4">${esc(val)}</textarea>` : `<input type="${type || 'text'}" data-p="${path}" value="${esc(val)}">`}`;
+
+  function drawEditor() {
+    const ed = document.querySelector('.ed');
+    const blocks = (k, title) => `<h3>${title}</h3>${draft[k].map((b, i) => `<div class="box">
+        ${fld('見出し', `${k}.${i}.title`, b.title)}${fld('本文（行頭に「・」で箇条書き）', `${k}.${i}.body`, b.body, 'area')}
+        <button type="button" class="b x w" data-del="${k}.${i}">このブロックを削除</button></div>`).join('')}
+      <button type="button" class="b w" data-add="${k}">＋ ${title}のブロックを追加</button>`;
+    ed.innerHTML = `
+      <div class="ed-bar"><button type="button" class="b" data-close>閉じる</button><b>編集</b><button type="button" class="b p" data-save>反映</button></div>
+      <div class="ed-in">
+        <h3>基本</h3><div class="box">
+          ${fld('お名前（「○○様のプラン」に使います）', 'name', draft.name)}
+          ${fld('タイトル（空なら「○○様のプラン」）', 'title', draft.title)}
+          ${fld('サブタイトル', 'subtitle', draft.subtitle, 'area')}
+          <label>アクセントの色</label><input type="color" data-p="accent" value="${esc(draft.accent || '#e0ad74')}">
+          ${fld('チェックインのリンク（任意・https://〜）', 'checkinUrl', draft.checkinUrl || '', 'url')}
+        </div>
+
+        <h3>テキストから取り込む</h3><div class="box">
+          <textarea id="importText" rows="6" placeholder="Day1 (Push)&#10;・チェストプレス（胸）&#10;40kgx8回&#10;47kgx8回"></textarea>
+          <p class="hint">LINEで送るときの書き方をそのまま貼り付けると、トレーニングの日と種目に分けます。「Day1 (Push)」の行が日、「・」の行が種目、その下の「40kgx8回」などがセットです。それ以外の行は「方針」に入ります。</p>
+          <button type="button" class="b w" data-import>取り込む（トレーニングを置き換え）</button>
+        </div>
+
+        <h3>トレーニング</h3>
+        ${draft.days.map((d, i) => `<div class="box">
+          <div class="row"><div style="flex:1">${fld('日の名前', `days.${i}.name`, d.name)}</div><div style="flex:1">${fld('内容', `days.${i}.focus`, d.focus)}</div></div>
+          ${d.exercises.map((e, j) => `<div class="box">
+            ${fld(`種目 ${j + 1}`, `days.${i}.exercises.${j}.name`, e.name)}
+            ${fld('メモ（部位など）', `days.${i}.exercises.${j}.note`, e.note)}
+            ${fld('セット（1行に1セット）', `days.${i}.exercises.${j}.sets`, (e.sets || []).join('\n'), 'area')}
+            ${fld('動画のURL（任意）', `days.${i}.exercises.${j}.video`, e.video, 'url')}
+            ${fld('ポイント（任意）', `days.${i}.exercises.${j}.tip`, e.tip, 'area')}
+            <button type="button" class="b x w" data-del="days.${i}.exercises.${j}">この種目を削除</button></div>`).join('')}
+          <button type="button" class="b w" data-add="days.${i}.exercises">＋ 種目を追加</button>
+          <button type="button" class="b x w" data-del="days.${i}">この日を削除</button></div>`).join('')}
+        <button type="button" class="b w" data-add="days">＋ 日を追加</button>
+
+        ${blocks('diet', '食事')}
+        ${blocks('cardio', '有酸素')}
+        ${blocks('policy', '方針')}
+        <p class="hint">中身のない項目はお客様の画面に出ません。「反映」で画面に反映し、「HTMLを書き出す」で保存したファイルを Netlify の同じサイトにアップロードすると、お客様のページが上書きされます。</p>
+        <button type="button" class="b w" data-save style="min-height:50px">反映して確認する</button>
+        <button type="button" class="b p w" data-export style="min-height:50px">反映して HTML を書き出す</button>
+      </div>`;
+  }
+
+  /** 画面の入力を draft に戻す */
+  function collect() {
+    document.querySelectorAll('.ed [data-p]').forEach((el) => {
+      const path = el.dataset.p.split('.');
+      let o = draft;
+      for (let i = 0; i < path.length - 1; i++) o = o[path[i]];
+      const k = path[path.length - 1];
+      o[k] = k === 'sets' ? el.value.split('\n').map((x) => x.trim()).filter(Boolean) : el.value;
+    });
+  }
+  const at = (path) => path.split('.').reduce((o, k) => o[k], draft);
+
+  /** LINE の書き方からトレーニングを作る */
+  function parseText(text) {
+    const days = [], notes = { policy: [], diet: [], cardio: [] };
+    const SEC = { 方針: 'policy', 目標: 'policy', 食事: 'diet', 有酸素: 'cardio' };
+    let day = null, ex = null, sec = null;
+    const norm = (s) => s.replace(/[•・]/g, ' ').replace(/\s*[xX×✕]\s*/g, ' × ').replace(/(\d+)\s*set(s)?/i, '$1セット').replace(/\s+/g, ' ').replace(/^ × /, '').trim()
+      .replace(/kg × (\d+)(?= ×|$)/, 'kg × $1回');
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      const h = /^[【(（\[]\s*(方針|目標|食事|有酸素)\s*[】)）\]]$/.exec(line);
+      if (h) { sec = SEC[h[1]]; day = null; ex = null; continue; }
+      let m = /^((?:day|DAY|Day)\s*\d+|\d+日目)\s*(?:[（(]\s*([^）)]*?)\s*[）)])?\s*(.*)$/.exec(line);
+      if (m) { day = { name: m[1].replace(/\s+/g, ''), focus: (m[2] || m[3] || '').trim(), exercises: [] }; days.push(day); ex = null; sec = null; continue; }
+      m = /^[・･•\-*]\s*(.+)$/.exec(line);
+      if (m && day) {
+        let name = m[1].trim(), note = '';
+        const n = /^(.*?)\s*[（(]([^）)]*)[）)]\s*$/.exec(name);
+        if (n) { name = n[1].trim(); note = n[2].trim(); }
+        ex = { name, note, sets: [], video: '', tip: '' };
+        day.exercises.push(ex);
+        continue;
+      }
+      if (ex && /\d/.test(line) && /(kg|回|rep|set|セット|×|x|✕|秒|分)/i.test(line)) { ex.sets.push(norm(line)); continue; }
+      day = null; ex = null;
+      const to = sec || (/食|コンビニ|カロリー|タンパク|間食|外食/.test(line) ? 'diet' : /有酸素|ウォーキング|ランニング|歩/.test(line) ? 'cardio' : 'policy');
+      notes[to].push(line.replace(/^[・•\-]\s*/, ''));
+    }
+    return { days, notes };
+  }
+
+  document.addEventListener('click', async (e) => {
+    const ed = document.querySelector('.ed');
+    if (!ed || !ed.contains(e.target)) return;
+    const t = e.target.closest('[data-close],[data-save],[data-export],[data-add],[data-del],[data-import]');
+    if (!t) return;
+    if (t.hasAttribute('data-close')) { if (confirm('保存していない変更は消えます。閉じますか？')) ed.remove(); return; }
+    collect();
+    if (t.dataset.add) {
+      const list = at(t.dataset.add);
+      if (t.dataset.add === 'days') list.push({ name: `Day${list.length + 1}`, focus: '', exercises: [] });
+      else if (t.dataset.add.endsWith('exercises')) list.push({ name: '', note: '', sets: [], video: '', tip: '' });
+      else list.push({ title: '', body: '' });
+      const y = ed.scrollTop; drawEditor(); ed.scrollTop = y;
+      return;
+    }
+    if (t.dataset.del) {
+      if (!confirm('削除しますか？')) return;
+      const parts = t.dataset.del.split('.');
+      const idx = Number(parts.pop());
+      at(parts.join('.')).splice(idx, 1);
+      const y = ed.scrollTop; drawEditor(); ed.scrollTop = y;
+      return;
+    }
+    if (t.hasAttribute('data-import')) {
+      const text = document.getElementById('importText').value;
+      const r = parseText(text);
+      if (!r.days.length) { toast('「Day1」などの行が見つかりませんでした'); return; }
+      if (draft.days.length && !confirm(`トレーニングを${r.days.length}日分で置き換えます。よろしいですか？`)) return;
+      draft.days = r.days;
+      const T = { policy: '方針', diet: '今の食事', cardio: '有酸素' };
+      for (const k of ['policy', 'diet', 'cardio']) if (r.notes[k].length) draft[k].push({ title: T[k], body: r.notes[k].map((x) => '・' + x).join('\n') });
+      drawEditor();
+      toast(`${r.days.length}日・${r.days.reduce((n, d) => n + d.exercises.length, 0)}種目を取り込みました`);
+      return;
+    }
+    if (t.hasAttribute('data-save') || t.hasAttribute('data-export')) {
+      plan = JSON.parse(JSON.stringify(draft));
+      if (t.hasAttribute('data-export')) exportHtml();
+      ed.remove();
+      render();
+      if (!t.hasAttribute('data-export')) toast('反映しました。お客様に届けるには「HTMLを書き出す」をしてください');
+    }
+  });
+
+  /** いまの中身を埋め込んだ index.html を保存する */
+  function exportHtml() {
+    const json = JSON.stringify(plan, null, 2).replace(/</g, '\\u003c');
+    const html = SRC.replace(/(<script id="plan-data" type="application\/json">)[\s\S]*?(<\/script>)/, (_, a, b) => `${a}\n${json}\n${b}`);
+    const blob = new Blob([html], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'index.html';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast('index.html を保存しました。Netlify の同じサイトにアップロードしてください');
+  }
+
+  // ================================================================ 起動
+
+  render();
+})();
+</script>
+</body>
+</html>

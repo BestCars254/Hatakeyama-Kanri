@@ -399,4 +399,3 @@ body.client .actions { position: static; }
 .meas input { margin-top: 0 !important; }
 .meas em { font-style: normal; color: var(--muted); }
 
-.f-applink { color: var(--primary); font-weight: 600; }
